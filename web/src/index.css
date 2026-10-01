@@ -1,0 +1,102 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ------------------------------------------------------------------ */
+/* Design tokens (single source of truth for Tailwind theme + CSS)     */
+/* ------------------------------------------------------------------ */
+@layer base {
+  :root {
+    --ink: #05060f;
+    --indigo-glow: #6366f1;
+    --violet-glow: #a855f7;
+    --cyan-glow: #22d3ee;
+    color-scheme: dark;
+  }
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  @apply bg-ink text-slate-100 font-display antialiased;
+  overflow-x: hidden;
+}
+
+.text-gradient {
+  background: linear-gradient(92deg, #818cf8 0%, #c084fc 45%, #22d3ee 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.glass {
+  @apply border border-white/10 bg-white/[0.04] backdrop-blur-xl;
+}
+
+.btn-primary {
+  @apply rounded-full bg-gradient-to-r from-indigoGlow to-violetGlow px-6 py-2.5 text-sm font-semibold text-white shadow-lg shadow-violetGlow/20 transition hover:brightness-110 active:scale-[0.98];
+}
+
+.btn-glass {
+  @apply rounded-full border border-white/10 bg-white/5 px-6 py-2.5 text-sm font-semibold text-slate-200 transition hover:border-white/30 hover:text-white active:scale-[0.98];
+}
+
+/* Toast entrance micro-interaction (slide + fade). */
+.toast-enter {
+  animation: toastIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes toastIn {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Mobile UX hardening for quick campus browsing. */
+html {
+  -webkit-tap-highlight-color: transparent;
+  scroll-behavior: smooth;
+}
+
+/* Never let native inputs zoom the page on iOS focus (needs >=16px). */
+input,
+select,
+textarea {
+  font-size: max(16px, 0.875rem);
+}
+
+@media (min-width: 640px) {
+  input,
+  select,
+  textarea {
+    font-size: unset;
+  }
+}
+
+button,
+a {
+  touch-action: manipulation;
+}
+
+/* Respect users who prefer reduced motion across all custom animations. */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

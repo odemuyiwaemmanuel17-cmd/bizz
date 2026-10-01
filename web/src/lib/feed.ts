@@ -1,0 +1,339 @@
+/**
+ * Phase 3 — Marketplace feed data layer.
+ *
+ * Fetches active listings from Supabase (`public.listings` joined with the
+ * creator's `public.profiles`) and exposes them as typed Hustle Cards data.
+ * When Supabase env vars are missing (offline demo mode) it falls back to a
+ * deterministic seed dataset so the feed is always browsable.
+ *
+ * All functions are total: network/DB failures resolve to an empty page with
+ * a human-readable `error` string instead of throwing.
+ */
+
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { getSupabase } from "./supabase";
+import type { ContactChannel } from "./contact";
+
+/* ------------------------------------------------------------------ */
+/* Feed view model                                                     */
+/* ------------------------------------------------------------------ */
+
+export const FEED_CATEGORIES = ["all", "services", "tech", "campus", "digital"] as const;
+export type FeedCategory = (typeof FEED_CATEGORIES)[number];
+
+export interface CategoryTab {
+  readonly id: FeedCategory;
+  readonly label: string;
+}
+
+export const CATEGORY_TABS: ReadonlyArray<CategoryTab> = Object.freeze([
+  { id: "all", label: "All" },
+  { id: "services", label: "Services" },
+  { id: "tech", label: "Tech" },
+  { id: "campus", label: "Campus" },
+  { id: "digital", label: "Digital" },
+]);
+
+/** Maps the legacy schema.sql CHECK values onto the five feed tabs. */
+const SCHEMA_CATEGORY_ALIASES: Readonly<Record<string, FeedCategory>> = Object.freeze({
+  services: "services",
+  tech: "tech",
+  campus: "campus",
+  digital: "digital",
+  "digital-goods": "digital",
+  content: "digital",
+  saas: "tech",
+  physical: "services",
+});
+
+export function normalizeFeedCategory(raw: string | null | undefined): FeedCategory {
+  if (typeof raw !== "string") return "digital";
+  const mapped: FeedCategory | undefined = SCHEMA_CATEGORY_ALIASES[raw.trim().toLowerCase()];
+  return mapped ?? "digital";
+}
+
+export interface CreatorInfo {
+  readonly id: string;
+  readonly displayName: string;
+  /** Avatar URL or null — cards render initials in that case. */
+  readonly avatarUrl: string | null;
+}
+
+export interface HustleCardData {
+  readonly id: string;
+  readonly title: string;
+  readonly blurb: string;
+  readonly category: FeedCategory;
+  /** Integer minor units (cents); use `formatPrice` for display. */
+  readonly priceCents: number;
+  readonly currency: string;
+  readonly votesCount: number;
+  readonly createdAt: string; // ISO timestamp
+  readonly creator: CreatorInfo;
+  readonly contactChannel: ContactChannel;
+  readonly contactHandle: string;
+}
+
+export interface FeedPage {
+  readonly items: ReadonlyArray<HustleCardData>;
+  readonly total: number;
+  readonly page: number;
+  readonly pageSize: number;
+  readonly error: string | null;
+}
+
+export interface FeedQuery {
+  readonly category?: FeedCategory;
+  readonly page?: number;
+  readonly pageSize?: number;
+}
+
+export const DEFAULT_PAGE_SIZE = 12;
+const MAX_PAGE_SIZE = 50;
+
+/* ------------------------------------------------------------------ */
+/* Price formatting                                                    */
+/* ------------------------------------------------------------------ */
+
+const CURRENCY_SYMBOLS: Readonly<Record<string, string>> = Object.freeze({
+  USD: "$",
+  EUR: "€",
+  GBP: "£",
+  INR: "₹",
+});
+
+/** Formats integer cents into a compact price tag ("$12", "$12.50", "Free"). */
+export function formatPrice(priceCents: number, currency: string = "USD"): string {
+  if (!Number.isFinite(priceCents) || priceCents <= 0) return "Free";
+  const symbol: string = CURRENCY_SYMBOLS[currency.toUpperCase()] ?? `${currency.toUpperCase()} `;
+  const rupees: number = Math.round(priceCents) / 100;
+  const fractionDigits: number = Number.isInteger(rupees) ? 0 : 2;
+  return `${symbol}${rupees.toFixed(fractionDigits)}`;
+}
+
+/* ------------------------------------------------------------------ */
+/* Row mapping                                                         */
+/* ------------------------------------------------------------------ */
+
+/** Raw shape returned by the select below (join may be null). */
+interface ListingRow {
+  readonly id: string;
+  readonly title: string | null;
+  readonly blurb: string | null;
+  readonly category: string | null;
+  readonly price_cents: number | null;
+  readonly created_at: string | null;
+  readonly owner_id: string | null;
+  readonly profiles: {
+    readonly id: string;
+    readonly handle: string | null;
+    readonly display_name: string | null;
+    readonly avatar_url: string | null;
+    readonly contact_channel: string | null;
+    readonly contact_handle: string | null;
+  } | null;
+  readonly votes_count?: number | null;
+}
+
+function toContactChannel(raw: string | null | undefined): ContactChannel {
+  return raw === "telegram" ? "telegram" : "whatsapp";
+}
+
+function rowToCard(row: ListingRow): HustleCardData | null {
+  const title: string = typeof row.title === "string" ? row.title.trim() : "";
+  if (title.length === 0) return null; // defensive: skip malformed rows
+  const profile = row.profiles;
+  const creator: CreatorInfo = Object.freeze({
+    id: profile?.id ?? row.owner_id ?? "unknown",
+    displayName: profile?.display_name ?? profile?.handle ?? "Hustler",
+    avatarUrl: profile?.avatar_url ?? null,
+  });
+  return Object.freeze({
+    id: row.id,
+    title,
+    blurb: typeof row.blurb === "string" ? row.blurb : "",
+    category: normalizeFeedCategory(row.category),
+    priceCents: typeof row.price_cents === "number" && Number.isFinite(row.price_cents) ? Math.max(0, Math.round(row.price_cents)) : 0,
+    currency: "USD",
+    votesCount: typeof row.votes_count === "number" ? Math.max(0, row.votes_count) : 0,
+    createdAt: typeof row.created_at === "string" ? row.created_at : new Date(0).toISOString(),
+    creator,
+    contactChannel: toContactChannel(profile?.contact_channel),
+    contactHandle: profile?.contact_handle ?? "",
+  });
+}
+
+/* ------------------------------------------------------------------ */
+/* Seed data (offline demo mode)                                       */
+/* ------------------------------------------------------------------ */
+
+function seedCards(): ReadonlyArray<HustleCardData> {
+  const day = 86_400_000;
+  const now: number = Date.UTC(2026, 9, 1);
+  const make = (
+    index: number,
+    title: string,
+    blurb: string,
+    category: FeedCategory,
+    priceCents: number,
+    votesCount: number,
+    _handle: string, // creator slug kept for readability of the seed rows
+    displayName: string,
+    contactChannel: ContactChannel,
+    contactHandle: string,
+  ): HustleCardData =>
+    Object.freeze({
+      id: `seed-${index}`,
+      title,
+      blurb,
+      category,
+      priceCents,
+      currency: "USD",
+      votesCount,
+      createdAt: new Date(now - index * day).toISOString(),
+      creator: Object.freeze({ id: `seed-creator-${index % 4}`, displayName, avatarUrl: null }),
+      contactChannel,
+      contactHandle,
+    });
+
+  return Object.freeze([
+    make(1, "Resume Roast", "Brutally honest resume feedback in 24h from recruiters.", "services", 1500, 42, "priya", "Priya S.", "whatsapp", "+15551234567"),
+    make(2, "Notion OS for Students", "A plug-and-play Notion workspace that runs your whole semester.", "digital", 900, 128, "notionknight", "Notion Knight", "telegram", "@notionknight"),
+    make(3, "PC Build Clinic", "Remote diagnostics + part picks tuned to your budget.", "tech", 3000, 76, "maxbuilds", "Max Builds", "whatsapp", "+15559876543"),
+    make(4, "Campus Print Runner", "Dorm-to-library print delivery before 9am lectures.", "campus", 200, 210, "printduh", "Print Duh", "whatsapp", "+15550001111"),
+    make(5, "Thesis Data Viz", "Publication-grade charts for your thesis chapter.", "tech", 4500, 33, "vizlab", "Viz Lab", "telegram", "@vizlabstudio"),
+    make(6, "Fridge Meal Prep", "Weekly micro-batch meal prep priced per dorm room.", "campus", 2500, 89, "mealprep", "MealPrep Mike", "whatsapp", "+15552223344"),
+    make(7, "Logo Sprint", "Three logo concepts in 48 hours, two revision rounds.", "digital", 8000, 54, "pixelmark", "Pixel & Mark", "telegram", "@pixelmarkco"),
+    make(8, "Interview Buddy", "Mock interviews with ex-FAANG engineers, recorded.", "services", 6000, 145, "buddy", "Interview Buddy", "whatsapp", "+15554445566"),
+    make(9, "Laptop ER", "Same-day software rescue for panicked finals-week laptops.", "tech", 2000, 61, "lapter", "Laptop ER", "whatsapp", "+15557778899"),
+    make(10, "Club Promo Pack", "Posters, reels and story templates for your campus club.", "campus", 1200, 27, "promopack", "Promo Pack", "telegram", "@promopack"),
+    make(11, "Spreadsheet Surgeon", "I fix your cursed Excel/Sheets model, no judgment.", "services", 3500, 98, "sheets", "Sheet Surgeon", "whatsapp", "+15556667788"),
+    make(12, "Zine Printing Co-op", "Risograph-style zines printed and folded by students.", "digital", 1800, 40, "zinecoop", "Zine Co-op", "telegram", "@zinecoop"),
+    make(13, "API Guardrails", "Type-safe client SDK generated from your OpenAPI spec.", "tech", 12000, 71, "apiguard", "API Guardrails", "whatsapp", "+15553332222"),
+    make(14, "Roommate Matching", "Curated roommate intros with a 10-question compatibility quiz.", "campus", 500, 187, "roomie", "Roomie Radar", "telegram", "@roomieradar"),
+    make(15, "Podcast Edit Kit", "Episodes cut, denoised and captioned within 72h.", "services", 5000, 36, "waveform", "Waveform Studio", "whatsapp", "+15551112233"),
+  ]);
+}
+
+/* ------------------------------------------------------------------ */
+/* Public API                                                          */
+/* ------------------------------------------------------------------ */
+
+function countFor(card: HustleCardData, sb: SupabaseClient | null): Promise<number> {
+  if (sb === null) return Promise.resolve(card.votesCount);
+  return (async (): Promise<number> => {
+    try {
+      const { count, error } = await sb
+        .from("votes")
+        .select("listing_id", { count: "exact", head: true })
+        .eq("listing_id", card.id);
+      return error === null ? count ?? 0 : card.votesCount;
+    } catch {
+      return card.votesCount;
+    }
+  })();
+}
+
+/**
+ * One page of active hustle cards, newest first, optionally filtered by tab.
+ * Never rejects — failures surface via `FeedPage.error`.
+ */
+export async function fetchHustleFeed(query: FeedQuery = {}): Promise<FeedPage> {
+  const category: FeedCategory = query.category ?? "all";
+  const page: number = Math.max(1, Math.trunc(query.page ?? 1));
+  const requested: number = Math.trunc(query.pageSize ?? DEFAULT_PAGE_SIZE);
+  const pageSize: number = Math.min(MAX_PAGE_SIZE, Math.max(1, Number.isFinite(requested) ? requested : DEFAULT_PAGE_SIZE));
+
+  const sb: SupabaseClient | null = getSupabase();
+  if (sb === null) {
+    // Offline demo mode: filter + paginate the seed set locally.
+    const all: ReadonlyArray<HustleCardData> = seedCards();
+    const filtered: ReadonlyArray<HustleCardData> =
+      category === "all" ? all : all.filter((card: HustleCardData) => card.category === category);
+    const start: number = (page - 1) * pageSize;
+    return Object.freeze({
+      items: Object.freeze(filtered.slice(start, start + pageSize)),
+      total: filtered.length,
+      page,
+      pageSize,
+      error: null,
+    });
+  }
+
+  try {
+    let builder = sb
+      .from("listings")
+      .select(
+        "id, title, blurb, category, price_cents, created_at, owner_id, votes:count, profiles:id,handle,display_name,avatar_url,contact_channel,contact_handle",
+        { count: "exact" },
+      )
+      .eq("status", "active")
+      .order("created_at", { ascending: false })
+      .range((page - 1) * pageSize, (page - 1) * pageSize + pageSize - 1);
+
+    if (category !== "all") {
+      const schemaValues: string[] = Object.keys(SCHEMA_CATEGORY_ALIASES).filter(
+        (key: string) => SCHEMA_CATEGORY_ALIASES[key] === category,
+      );
+      builder = builder.in("category", schemaValues);
+    }
+
+    const { data, count, error } = await builder;
+    if (error !== null) {
+      return Object.freeze({ items: Object.freeze([]), total: 0, page, pageSize, error: error.message });
+    }
+    const rows: ReadonlyArray<ListingRow> = Array.isArray(data) ? (data as unknown as ListingRow[]) : [];
+    const cards: HustleCardData[] = [];
+    for (const row of rows) {
+      const card: HustleCardData | null = rowToCard(row);
+      if (card !== null) cards.push(card);
+    }
+    return Object.freeze({
+      items: Object.freeze(cards),
+      total: typeof count === "number" ? count : cards.length,
+      page,
+      pageSize,
+      error: null,
+    });
+  } catch (err: unknown) {
+    const message: string = err instanceof Error ? err.message : "Unknown feed error";
+    return Object.freeze({ items: Object.freeze([]), total: 0, page, pageSize, error: message });
+  }
+}
+
+/** Vote counts for a batch of listing ids (used to hydrate cards after fetch). */
+export async function voteCountsFor(ids: ReadonlyArray<string>): Promise<ReadonlyMap<string, number>> {
+  const result: Map<string, number> = new Map<string, number>();
+  if (ids.length === 0) return result;
+  const sb: SupabaseClient | null = getSupabase();
+  if (sb === null) {
+    for (const card of seedCards()) {
+      if (ids.includes(card.id)) result.set(card.id, card.votesCount);
+    }
+    return result;
+  }
+  try {
+    const { data, error } = await sb.from("votes").select("listing_id").in("listing_id", ids as unknown as string[]);
+    if (error !== null || !Array.isArray(data)) return result;
+    for (const row of data as ReadonlyArray<{ readonly listing_id?: unknown }>) {
+      const listingId: string = String(row.listing_id ?? "");
+      if (listingId.length > 0) result.set(listingId, (result.get(listingId) ?? 0) + 1);
+    }
+  } catch {
+    // Tally is decorative — swallow and return what we have.
+  }
+  return result;
+}
+
+/** Attach live vote tallies to already-fetched cards (best effort). */
+export async function hydrateVotes(items: ReadonlyArray<HustleCardData>): Promise<ReadonlyArray<HustleCardData>> {
+  const counts: ReadonlyMap<string, number> = await voteCountsFor(items.map((item: HustleCardData) => item.id));
+  return Object.freeze(
+    items.map((item: HustleCardData): HustleCardData => {
+      const count: number | undefined = counts.get(item.id);
+      return count === undefined ? item : Object.freeze({ ...item, votesCount: count });
+    }),
+  );
+}
+
+void countFor; // reserved for future per-card refresh; keeps tree-shaking honest
