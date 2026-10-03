@@ -101,5 +101,15 @@ create policy "owners manage own listing images" on storage.objects for all usin
   bucket_id = 'listing-images' and (storage.foldername(name))[1] = auth.uid()::text
 );
 
--- Realtime for live tally bars
-alter publication supabase_realtime add table public.idea_votes;
+-- Realtime for live tally bars (idempotent: only add if not already in the publication)
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime'
+      and schemaname = 'public'
+      and tablename = 'idea_votes'
+  ) then
+    execute 'alter publication supabase_realtime add table public.idea_votes';
+  end if;
+end$$;
