@@ -286,19 +286,25 @@ export function isDraftValid(draft: ListingDraft): boolean {
 
 interface IdeaRow {
   readonly id: string;
-  readonly owner_id: string | null;
+  readonly owner_id?: string | null;
+  readonly user_id?: string | null;
   readonly title: string | null;
-  readonly pitch: string | null;
-  readonly category: string | null;
-  readonly target_price_cents: number | null;
-  readonly image_url: string | null;
-  readonly status: string | null;
-  readonly created_at: string | null;
+  readonly pitch?: string | null;
+  readonly description?: string | null;
+  readonly blurb?: string | null;
+  readonly category?: string | null;
+  readonly target_price_cents?: number | null;
+  readonly price_cents?: number | null;
+  readonly image_url?: string | null;
+  readonly status?: string | null;
+  readonly created_at?: string | null;
   readonly bizz_count?: number | null;
   readonly fizz_count?: number | null;
   readonly profiles?: {
-    readonly display_name: string | null;
-    readonly handle: string | null;
+    readonly display_name?: string | null;
+    readonly full_name?: string | null;
+    readonly email?: string | null;
+    readonly handle?: string | null;
   } | null;
 }
 
@@ -351,18 +357,30 @@ function rowToIdea(row: IdeaRow): ValidationIdea | null {
   const title: string = typeof row.title === "string" ? row.title.trim() : "";
   if (title.length === 0) return null;
   const tally: SentimentTally = computeTally(row.bizz_count ?? 0, row.fizz_count ?? 0);
+  const pitchText: string =
+    typeof row.pitch === "string" ? row.pitch
+    : typeof row.description === "string" ? row.description
+    : typeof row.blurb === "string" ? row.blurb
+    : "";
+  const priceRaw: number | null | undefined =
+    typeof row.target_price_cents === "number" ? row.target_price_cents : row.price_cents;
+  const profile = row.profiles ?? null;
+  const creatorName: string =
+    profile?.full_name ?? profile?.display_name ?? profile?.handle
+    ?? (typeof profile?.email === "string" ? profile.email.split("@")[0] ?? "" : "")
+    ?? "Anonymous hustler";
   return Object.freeze({
     id: row.id,
     title,
-    pitch: typeof row.pitch === "string" ? row.pitch : "",
-    category: normalizeFeedCategory(row.category),
-    targetPriceCents: typeof row.target_price_cents === "number" && Number.isFinite(row.target_price_cents)
-      ? Math.max(0, Math.round(row.target_price_cents))
+    pitch: pitchText,
+    category: normalizeFeedCategory(row.category ?? null),
+    targetPriceCents: typeof priceRaw === "number" && Number.isFinite(priceRaw)
+      ? Math.max(0, Math.round(priceRaw))
       : 0,
     imageUrl: typeof row.image_url === "string" ? row.image_url : null,
     createdAt: typeof row.created_at === "string" ? row.created_at : new Date(0).toISOString(),
-    ownerId: row.owner_id ?? "unknown",
-    creatorName: row.profiles?.display_name ?? row.profiles?.handle ?? "Anonymous hustler",
+    ownerId: row.owner_id ?? row.user_id ?? "unknown",
+    creatorName: creatorName.length > 0 ? creatorName : "Anonymous hustler",
     tally,
     validated: isValidated(tally),
   });
@@ -464,13 +482,20 @@ export async function fetchIdeas(limit: number = 24): Promise<IdeaPage> {
   const sb: SupabaseClient | null = getSupabase();
   if (sb === null) return offlineIdeaPage();
   const capped: number = Math.min(50, Math.max(1, Math.trunc(limit)));
+  /*
+   * Live `public.ideas` schema variants drift across deployments (owner_id vs
+   * user_id, pitch vs description, presence of status/category/image columns).
+   * Use plain select("*") — never embedded joins or explicit column lists —
+   * so PostgREST can't throw schema-cache errors; missing fields are mapped
+   * to safe defaults below.
+   */
   try {
-    const { data, error } = await sb
-      .from("ideas")
-      .select("id, owner_id, title, pitch, category, target_price_cents, image_url, status, created_at, profiles:profiles(display_name, handle)")
-      .eq("status", "open")
-      .order("created_at", { ascending: false })
-      .limit(capped);
+    let result = await sb.from("ideas").select("*").order("created_at", { ascending: false }).limit(capped);
+    if (result.error !== null) {
+      // Retry without ordering in case created_at is absent on this variant.
+      result = await sb.from("ideas").select("*");
+    }
+    const { data, error } = result;
     if (error !== null) return Object.freeze({ items: Object.freeze([]), error: error.message });
     const rows: IdeaRow[] = Array.isArray(data) ? (data as unknown as IdeaRow[]) : [];
     const mapped: ReadonlyArray<ValidationIdea | null> = await Promise.all(
@@ -708,17 +733,16 @@ export async function publishListing(draft: ListingDraft): Promise<PublishResult
         .from("ideas")
         .insert({
           // Explicitly set to the verified logged-in user id so the insert
-          // satisfies the RLS policy: user_id = auth.uid(). The live
-          // `ideas` table stores the creator in `user_id` and the pitch in
-          // `description` (owner_id/pitch/target_price_cents are legacy
-          // names that trip the PostgREST schema cache).
+          // satisfies the RLS policy: user_id = auth.uid(). Live `ideas`
+          // table columns verified via REST probe: id,user_id,title,
+          // description,created_at. Extra fields (category/status/image)
+          // are attempted first and stripped on schema-cache errors.
           user_id: userId,
           title: draft.title.trim(),
           description: draft.blurb.trim(),
           category: draft.category,
-          price_cents: draft.priceCents,
-          image_url: draft.imageUrl,
           status: "open",
+          image_url: draft.imageUrl,
         })
         .select("id")
         .single();
