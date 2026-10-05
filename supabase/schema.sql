@@ -176,12 +176,23 @@ create trigger on_auth_user_created
   after insert on auth.users
   for each row execute function public.handle_new_user();
 
--- Backfill profiles for users who signed up before this migration existed
+-- Ensure newer profile columns exist even if the table predates this script
+alter table public.profiles add column if not exists display_name text;
+alter table public.profiles add column if not exists avatar_url text;
+alter table public.profiles add column if not exists contact_channel text check (contact_channel in ('whatsapp','telegram'));
+alter table public.profiles add column if not exists contact_handle text;
+
+-- Backfill profiles for users who signed up before this migration existed.
+-- Handle uniqueness: suffix with a short slice of the user id so two users
+-- sharing an email prefix never collide.
 insert into public.profiles (id, handle, display_name)
 select u.id,
-       left(lower(regexp_replace(split_part(u.email,'@',1), '[^a-z0-9_]', '', 'g')), 24)
-         || '_' || substr(replace(u.id::text,'-',''), 1, 5),
-       split_part(u.email,'@',1)
+       coalesce(
+         nullif(left(lower(regexp_replace(split_part(coalesce(u.email, 'hustler','@'), '@', 1), '[^a-z0-9_]', '', 'g')), 20), ''),
+         'hustler'
+       )
+       || '_' || substr(replace(u.id::text, '-', ''), 1, 6),
+       coalesce(nullif(split_part(u.email, '@', 1), ''), 'New hustler')
 from auth.users u
 left join public.profiles p on p.id = u.id
 where p.id is null
