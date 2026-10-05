@@ -53,7 +53,6 @@ interface ListingRow {
   readonly price_cents: number | null;
   readonly image_url: string | null;
   readonly created_at: string | null;
-  readonly votes_count: number | null;
 }
 
 interface IdeaRow {
@@ -84,7 +83,10 @@ export async function fetchCreatorDashboard(userId: string): Promise<DashboardRe
     const [listingsRes, ideasRes] = await Promise.all([
       sb
         .from("listings")
-        .select("id, title, category, price_cents, image_url, created_at, votes_count")
+        // NOTE: do not select `votes_count` — that column does not exist on the
+        // live `listings` table and PostgREST rejects the whole query. Vote
+        // counts are derived from the `votes` table below instead.
+        .select("id, title, category, price_cents, image_url, created_at")
         .eq("owner_id", userId)
         .order("created_at", { ascending: false })
         .limit(100),
@@ -106,6 +108,34 @@ export async function fetchCreatorDashboard(userId: string): Promise<DashboardRe
     const listingRows: ReadonlyArray<ListingRow> = Array.isArray(listingsRes.data)
       ? (listingsRes.data as unknown as ListingRow[])
       : [];
+
+    // Derive per-listing vote counts from the `votes` table instead of a
+    // `listings.votes_count` column, which does not exist in our schema.
+    // Runs best-effort: if the votes query fails we degrade to 0 rather than
+    // breaking the whole dashboard.
+    let votesByListing: Map<string, number> = new Map();
+    if (listingRows.length > 0) {
+      try {
+        const votesRes = await sb
+          .from("votes")
+          .select("listing_id")
+          .in("listing_id", listingRows.map((row: ListingRow): string => row.id))
+          .limit(5000);
+        if (votesRes.error === null && Array.isArray(votesRes.data)) {
+          const counts = new Map<string, number>();
+          for (const v of votesRes.data as Array<{ readonly listing_id?: string | null }>) {
+            const lid: string | undefined = v.listing_id ?? undefined;
+            if (typeof lid === "string" && lid.length > 0) {
+              counts.set(lid, (counts.get(lid) ?? 0) + 1);
+            }
+          }
+          votesByListing = counts;
+        }
+      } catch {
+        // Best effort only — leave counts at zero.
+      }
+    }
+
     const listings: ReadonlyArray<DashboardListing> = Object.freeze(
       listingRows.map((row: ListingRow): DashboardListing => ({
         id: row.id,
@@ -113,7 +143,7 @@ export async function fetchCreatorDashboard(userId: string): Promise<DashboardRe
         category: normalizeFeedCategory(row.category),
         priceCents: typeof row.price_cents === "number" && Number.isFinite(row.price_cents) ? Math.max(0, Math.round(row.price_cents)) : 0,
         imageUrl: row.image_url ?? null,
-        votesCount: typeof row.votes_count === "number" && Number.isFinite(row.votes_count) ? Math.max(0, Math.round(row.votes_count)) : 0,
+        votesCount: votesByListing.get(row.id) ?? 0,
         createdAt: row.created_at ?? new Date().toISOString(),
       })),
     );
