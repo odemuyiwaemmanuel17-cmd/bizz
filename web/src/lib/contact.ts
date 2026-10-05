@@ -115,6 +115,39 @@ export function buildChatLink(handle: ContactHandle, message: string): ChatLinkR
   return url === null ? null : Object.freeze({ url, channel: handle.channel });
 }
 
+/**
+ * Normalises free-form contact input into a storable deep link for the
+ * `listings.contact_link` column. Accepts full URLs (`https://wa.me/...`,
+ * `https://t.me/...`) as well as bare handles (phone digits / @username).
+ * Returns `null` when the value is empty or unusable — callers must then
+ * substitute a non-null placeholder before inserting (the column has a
+ * NOT NULL constraint).
+ */
+export function normalizeContactLink(
+  channel: ContactChannel,
+  rawValue: string | null | undefined,
+): string | null {
+  if (typeof rawValue !== "string") return null;
+  const trimmed: string = rawValue.trim();
+  if (trimmed.length === 0) return null;
+
+  // Already a fully-formed deep link → keep it verbatim (lower-cased host).
+  if (/^https?:\/\/(wa\.me|t\.me)\//i.test(trimmed)) return trimmed;
+
+  const handle: ContactHandle | null = parseContactHandle(channel, trimmed);
+  if (handle === null) return null;
+  if (handle.channel === "whatsapp" && handle.phoneDigits !== undefined) {
+    return buildWhatsAppUrl(handle.phoneDigits, "");
+  }
+  if (handle.channel === "telegram" && handle.username !== undefined) {
+    return buildTelegramUrl(handle.username, "");
+  }
+  return null;
+}
+
+/** Placeholder stored when a creator leaves the contact field blank. */
+export const CONTACT_LINK_PLACEHOLDER: string = "";
+
 /** Convenience wrapper used directly by the CTA component. */
 export function createChatHref(
   channel: ContactChannel,

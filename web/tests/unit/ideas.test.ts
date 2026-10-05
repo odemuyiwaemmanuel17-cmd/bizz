@@ -16,6 +16,7 @@ import {
   VALIDATION_THRESHOLD_BIZZ,
   type ListingDraft,
 } from "../../src/lib/ideas";
+import { normalizeContactLink, CONTACT_LINK_PLACEHOLDER } from "../../src/lib/contact";
 
 describe("computeTally", () => {
   it("reports whole-number percentages that sum to exactly 100", () => {
@@ -97,5 +98,48 @@ describe("validateDraft / validateDraftStep", () => {
   it("ignores media/review steps for field errors", () => {
     expect(validateDraftStep(EMPTY_DRAFT, 2)).toEqual({});
     expect(validateDraftStep(EMPTY_DRAFT, 3)).toEqual({});
+  });
+});
+
+describe("contact_link handling (publish payload)", () => {
+  it("accepts a valid WhatsApp number and normalises to a wa.me deep link", () => {
+    const draft: ListingDraft = Object.freeze({
+      ...EMPTY_DRAFT,
+      title: "Design a logo in an hour",
+      blurb: "Vector logo delivered fast",
+      contactChannel: "whatsapp",
+      contactHandle: "+1 415 555 0123",
+    });
+    expect(validateDraft(draft).contactHandle).toBeUndefined();
+    expect(normalizeContactLink("whatsapp", draft.contactHandle)).toBe("https://wa.me/14155550123");
+  });
+
+  it("accepts a Telegram handle and normalises to a t.me deep link", () => {
+    expect(normalizeContactLink("telegram", "@cool_hustla")).toBe("https://t.me/cool_hustla");
+  });
+
+  it("passes through fully-formed deep links unchanged", () => {
+    expect(normalizeContactLink("whatsapp", "https://wa.me/14155550123")).toBe("https://wa.me/14155550123");
+  });
+
+  it("rejects invalid handles with a field error instead of inserting null", () => {
+    const draft: ListingDraft = Object.freeze({
+      ...EMPTY_DRAFT,
+      title: "Valid title here",
+      blurb: "Long enough pitch text",
+      contactChannel: "whatsapp",
+      contactHandle: "not-a-phone",
+    });
+    expect(validateDraft(draft).contactHandle).toBeDefined();
+    // Publish layer substitutes the non-null placeholder when unusable.
+    expect(normalizeContactLink("whatsapp", "not-a-phone") ?? CONTACT_LINK_PLACEHOLDER).toBe("");
+  });
+
+  it("blank contact is allowed and never produces null in the payload", () => {
+    const draft: ListingDraft = Object.freeze({ ...EMPTY_DRAFT, title: "Valid title", blurb: "Long enough pitch text" });
+    expect(validateDraft(draft).contactHandle).toBeUndefined();
+    const stored: string = normalizeContactLink(draft.contactChannel, draft.contactHandle) ?? CONTACT_LINK_PLACEHOLDER;
+    expect(typeof stored).toBe("string");
+    expect(stored).toBe(CONTACT_LINK_PLACEHOLDER);
   });
 });

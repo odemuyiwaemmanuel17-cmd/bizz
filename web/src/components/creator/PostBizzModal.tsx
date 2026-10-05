@@ -2,6 +2,7 @@ import { useEffect, type ReactElement } from "react";
 import { usePostBizz } from "../../hooks/usePostBizz";
 import { useAuth } from "../../hooks/useAuth";
 import { formatPrice, CATEGORY_TABS, type FeedCategory } from "../../lib/feed";
+import { normalizeContactLink } from "../../lib/contact";
 import { VALIDATION_THRESHOLD_BIZZ } from "../../lib/ideas";
 import { useToast, type ToastApi, type ToastInput } from "../ui/Toaster";
 import type { PublishedListing } from "../../lib/ideas";
@@ -309,6 +310,57 @@ export default function PostBizzModal({ open, onClose }: PostBizzModalProps): Re
                       {draft.blurb.length}/280
                     </span>
                   </div>
+
+                  {/* Contact link (stored in listings.contact_link, NOT NULL) */}
+                  {!draft.isConcept && (
+                    <div className="mt-6">
+                      <span className="mb-1.5 block text-sm font-semibold text-slate-200">
+                        How should buyers contact you?
+                      </span>
+                      <div className="mb-2 inline-flex rounded-xl border border-white/10 bg-white/5 p-1" role="radiogroup" aria-label="Contact channel">
+                        {(["whatsapp", "telegram"] as const).map((channel) => (
+                          <button
+                            key={channel}
+                            type="button"
+                            role="radio"
+                            aria-checked={draft.contactChannel === channel}
+                            onClick={() => wizard.updateDraft({ contactChannel: channel })}
+                            className={`rounded-lg px-3 py-1.5 text-xs font-semibold capitalize transition ${
+                              draft.contactChannel === channel
+                                ? "bg-gradient-to-r from-cyanGlow/30 to-violetGlow/30 text-white"
+                                : "text-slate-400 hover:text-white"
+                            }`}
+                          >
+                            {channel === "whatsapp" ? "💬 WhatsApp" : "✈️ Telegram"}
+                          </button>
+                        ))}
+                      </div>
+                      <label htmlFor="bizz-contact" className="sr-only">
+                        {draft.contactChannel === "whatsapp" ? "WhatsApp phone number" : "Telegram username"}
+                      </label>
+                      <input
+                        id="bizz-contact"
+                        type="text"
+                        inputMode={draft.contactChannel === "whatsapp" ? "tel" : "text"}
+                        autoComplete="off"
+                        className={inputClass}
+                        placeholder={
+                          draft.contactChannel === "whatsapp"
+                            ? "+14155550123 or https://wa.me/14155550123"
+                            : "@yourhandle or https://t.me/yourhandle"
+                        }
+                        value={draft.contactHandle}
+                        onChange={(event) => wizard.updateDraft({ contactHandle: event.target.value })}
+                      />
+                      {errors.contactHandle !== undefined ? (
+                        <p role="alert" className="mt-1.5 text-xs text-rose-300">{errors.contactHandle}</p>
+                      ) : (
+                        <p className="mt-1.5 text-xs text-slate-500">
+                          Optional — saved as the listing&rsquo;s contact link. Leave blank and buyers reach you via your profile chat CTA.
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -361,6 +413,14 @@ export default function PostBizzModal({ open, onClose }: PostBizzModalProps): Re
                     <dd className="font-medium capitalize text-white">{draft.category}</dd>
                     <dt className="text-slate-500">Price</dt>
                     <dd className="font-medium text-white">{formatPrice(draft.priceCents, draft.currency)}</dd>
+                    {!draft.isConcept && (
+                      <>
+                        <dt className="text-slate-500">Contact link</dt>
+                        <dd className="break-all font-medium text-white">
+                          {normalizeContactLink(draft.contactChannel, draft.contactHandle) ?? "— none (saved as blank)"}
+                        </dd>
+                      </>
+                    )}
                     <dt className="text-slate-500">Image</dt>
                     <dd className="font-medium text-white">{image !== null ? image.file.name : draft.imageUrl !== null ? "Uploaded" : "None"}</dd>
                   </dl>

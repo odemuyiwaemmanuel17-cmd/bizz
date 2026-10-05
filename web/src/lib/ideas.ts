@@ -17,6 +17,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSupabase, getSessionSafe, type AuthSnapshot } from "./supabase";
 import { normalizeFeedCategory, type FeedCategory } from "./feed";
+import { normalizeContactLink, CONTACT_LINK_PLACEHOLDER, type ContactChannel } from "./contact";
 
 /* ------------------------------------------------------------------ */
 /* Shared result helpers                                               */
@@ -187,6 +188,10 @@ export interface ListingDraft {
   readonly currency: string;
   readonly imageUrl: string | null;
   readonly isConcept: boolean;
+  /** Outreach channel used for the `contact_link` deep link. */
+  readonly contactChannel: ContactChannel;
+  /** Raw WhatsApp phone / Telegram username entered by the creator. */
+  readonly contactHandle: string;
 }
 
 export const EMPTY_DRAFT: ListingDraft = Object.freeze({
@@ -197,6 +202,8 @@ export const EMPTY_DRAFT: ListingDraft = Object.freeze({
   currency: "USD",
   imageUrl: null,
   isConcept: false,
+  contactChannel: "whatsapp",
+  contactHandle: "",
 });
 
 export const FORM_STEPS = ["Basics", "Details", "Media", "Review"] as const;
@@ -204,7 +211,7 @@ export type FormStep = (typeof FORM_STEPS)[number];
 
 export const STEP_FIELDS: Readonly<Record<FormStep, ReadonlyArray<keyof ListingDraft>>> = Object.freeze({
   Basics: ["title"],
-  Details: ["blurb", "category", "priceCents"],
+  Details: ["blurb", "category", "priceCents", "contactHandle"],
   Media: [],
   Review: [],
 });
@@ -251,6 +258,15 @@ export function validateDraftStep(draft: ListingDraft, stepIndex: number): Draft
     if (draft.category === "all") errors.category = "Pick a real category tab.";
     const priceError: string | null = validatePrice(draft.priceCents, draft.isConcept);
     if (priceError !== null) errors.priceCents = priceError;
+    // Contact is optional, but when provided it must be a valid WhatsApp
+    // phone or Telegram handle so we can store a usable deep link. Blank
+    // input is allowed and falls back to a non-null placeholder on insert.
+    if (draft.contactHandle.trim().length > 0 && normalizeContactLink(draft.contactChannel, draft.contactHandle) === null) {
+      errors.contactHandle =
+        draft.contactChannel === "whatsapp"
+          ? "Enter a valid WhatsApp number with country code (e.g. +14155550123)."
+          : "Enter a valid Telegram username (5–32 letters, digits or underscores).";
+    }
   }
   return errors;
 }
@@ -700,6 +716,12 @@ export async function publishListing(draft: ListingDraft): Promise<PublishResult
     const trimmedTitle: string = draft.title.trim();
     const trimmedPitch: string = draft.blurb.trim();
 
+    // `listings.contact_link` is NOT NULL in the live schema. Normalise the
+    // creator's WhatsApp/Telegram input into a deep link; when they leave it
+    // blank fall back to the empty-string placeholder so we NEVER send null.
+    const normalizedContact: string | null = normalizeContactLink(draft.contactChannel, draft.contactHandle);
+    const contactLink: string = normalizedContact ?? CONTACT_LINK_PLACEHOLDER;
+
     interface ListingPayload {
       readonly [key: string]: string | number | null;
     }
@@ -708,6 +730,7 @@ export async function publishListing(draft: ListingDraft): Promise<PublishResult
       title: trimmedTitle,
       category: draft.category,
       image_url: draft.imageUrl,
+      contact_link: contactLink,
       status: "active",
     } as const;
 

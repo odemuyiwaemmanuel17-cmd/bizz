@@ -45,3 +45,19 @@ create policy "anyone can post a bizz" on public.listings for insert to authenti
 
 -- 5) Refresh the schema cache immediately (also auto-refreshes within ~seconds).
 notify pgrst, 'reload schema';
+
+-- =====================================================================
+-- Publish fix: listings.contact_link must never be NULL.
+-- The Post-a-Bizz wizard now always sends a normalised WhatsApp/Telegram
+-- deep link (or "" when the creator leaves it blank), but existing rows
+-- may still hold NULLs, which breaks NOT NULL rewrites and joins.
+-- Backfill them with the empty-string placeholder and add a DEFAULT so
+-- any legacy insert path that omits the column can never fail again.
+-- =====================================================================
+
+alter table public.listings add column if not exists contact_link text;
+update public.listings set contact_link = '' where contact_link is null;
+alter table public.listings alter column contact_link set default '';
+alter table public.listings alter column contact_link set not null;
+
+notify pgrst, 'reload schema';
