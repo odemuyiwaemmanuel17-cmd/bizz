@@ -11,6 +11,7 @@ const LINKS: ReadonlyArray<{ label: string; href: string }> = [
   { label: "How it works", href: "#how-it-works" },
   { label: "Discover", href: "#feed" },
   { label: "Validation", href: "#validate" },
+  { label: "Dashboard", href: "#dashboard" },
 ];
 
 export default function Navbar({ onWaitlistClick, onPostBizzClick }: NavbarProps): ReactElement {

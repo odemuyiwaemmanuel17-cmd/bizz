@@ -152,8 +152,16 @@ export default function PostBizzModal({ open, onClose }: PostBizzModalProps): Re
               <button type="button" onClick={wizard.reset} className="btn-glass">
                 Post another
               </button>
-              <button type="button" onClick={handleClose} className="btn-primary">
-                Done
+              <button
+                type="button"
+                onClick={() => {
+                  handleClose();
+                  const el: HTMLElement | null = document.getElementById("dashboard");
+                  if (el !== null) el.scrollIntoView({ behavior: "smooth", block: "start" });
+                }}
+                className="btn-primary"
+              >
+                View in dashboard →
               </button>
             </div>
           </div>

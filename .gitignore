@@ -1,15 +1,9 @@
-# Dependencies
 node_modules/
-
-# Logs
 *.log
-
-# Environment variables
+dist/
 .env
 .env.local
 .env.*.local
-# Build output
-dist/
-
-# OS
 .DS_Store
+.vite/
+coverage/

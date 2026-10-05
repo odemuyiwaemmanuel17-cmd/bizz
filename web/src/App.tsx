@@ -5,6 +5,7 @@ import ValueProposition from "./components/ValueProposition";
 import HustleFeed from "./components/feed/HustleFeed";
 import ValidationSection from "./components/validation/ValidationSection";
 import PostBizzModal from "./components/creator/PostBizzModal";
+import { CreatorDashboard } from "./components/dashboard/CreatorDashboard";
 import Footer from "./components/Footer";
 
 export default function App(): ReactElement {
@@ -28,6 +29,7 @@ export default function App(): ReactElement {
       <Hero onPrimaryClick={scrollToValidate} />
       <HustleFeed />
       <ValidationSection />
+      <CreatorDashboard />
       <ValueProposition />
       <Footer />
       <PostBizzModal open={postOpen} onClose={closePostModal} />
