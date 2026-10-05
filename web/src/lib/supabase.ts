@@ -99,6 +99,93 @@ export async function signInWithMagicLink(
   }
 }
 
+/* ------------------------------------------------------------------ */
+/* Profile bootstrap                                                   */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Upserts a `public.profiles` row for the given user so the row ALWAYS exists
+ * before any listing/idea insert is attempted (listings.owner_id /
+ * listings.user_id carry a FK to profiles.id — missing rows cause foreign
+ * key violations). Best-effort by design: failures are logged and resolved
+ * silently because a DB-side trigger/backfill may already have created the
+ * row, and we never want profile bookkeeping to block sign-in.
+ */
+export async function ensureProfileRow(user: User): Promise<void> {
+  const sb: SupabaseClient | null = getSupabase();
+  if (sb === null) return;
+
+  const email: string = user.email ?? "";
+  const fallbackName: string = email.length > 0 ? email.split("@")[0] ?? "hustler" : "hustler";
+  const fullName: string =
+    typeof user.user_metadata?.["full_name"] === "string" &&
+    (user.user_metadata["full_name"] as string).trim().length > 0
+      ? (user.user_metadata["full_name"] as string).trim()
+      : fallbackName;
+  const avatarUrl: string | null =
+    typeof user.user_metadata?.["avatar_url"] === "string"
+      ? (user.user_metadata["avatar_url"] as string)
+      : null;
+
+  // Live schema variants observed across deployments: this project's
+  // profiles table stores (id, email, full_name, avatar_url); older
+  // migrations used (id, handle NOT NULL, display_name). Try both shapes
+  // so one upsert succeeds regardless of which migration ran last.
+  type ProfilePayload = Record<string, string | null>;
+  const attempts: ReadonlyArray<ProfilePayload> = Object.freeze<ProfilePayload[]>([
+    {
+      id: user.id,
+      email,
+      full_name: fullName,
+      avatar_url: avatarUrl,
+    },
+    {
+      id: user.id,
+      // handle must be unique + >=2 chars: derive from email, suffix uid slice.
+      handle: `${(fallbackName.toLowerCase().replace(/[^a-z0-9_]/g, "").slice(0, 20) || "hustler")}_${user.id.replace(/-/g, "").slice(0, 6)}`,
+      display_name: fullName,
+      avatar_url: avatarUrl,
+    },
+  ]);
+
+  let lastMessage: string | null = null;
+  for (const payload of attempts) {
+    try {
+      const { error } = await sb.from("profiles").upsert(payload, { onConflict: "id" });
+      if (error === null) return;
+      lastMessage = error.message;
+    } catch (err: unknown) {
+      lastMessage = err instanceof Error ? err.message : "Unknown error";
+    }
+  }
+  console.warn("[supabase] Could not upsert profile row:", lastMessage);
+}
+
+/**
+ * Resolves the acting user with SERVER-side verification (`getUser()` hits
+ * GoTrue, refreshes tokens, and returns the authoritative uid that RLS
+ * policies compare against), then guarantees the matching `profiles` row
+ * exists. Call this right after any successful sign-in/sign-up/OAuth return
+ * and before any insert into listings/ideas.
+ */
+export async function bootstrapAuthenticatedUser(): Promise<AuthSnapshot> {
+  const sb: SupabaseClient | null = getSupabase();
+  if (sb === null) return { status: "config-missing", user: null, session: null };
+  try {
+    const { data, error } = await sb.auth.getUser();
+    if (error !== null) throw error;
+    const user: User | null = data.user ?? null;
+    if (user === null) return { status: "unauthenticated", user: null, session: null };
+    await ensureProfileRow(user);
+    return { status: "authenticated", user, session: null };
+  } catch (err: unknown) {
+    console.error("[supabase] bootstrapAuthenticatedUser failed:", err);
+    // Fall back to the locally cached session so offline token expiry does
+    // not lock the user out of their own dashboard.
+    return getSessionSafe();
+  }
+}
+
 export type AuthResult = { ok: true } | { ok: false; message: string };
 
 /** Email/password sign-up. Creates the auth user (profile row is auto-created by trigger). */
@@ -111,12 +198,19 @@ export async function signUpWithEmail(
     return { ok: false, message: "Supabase is not configured yet (missing VITE_SUPABASE_* variables)." };
   }
   try {
-    const { error } = await sb.auth.signUp({
+    const { data, error } = await sb.auth.signUp({
       email,
       password,
       options: { emailRedirectTo: window.location.origin + "/dashboard" },
     });
     if (error !== null) return { ok: false, message: error.message };
+    // Guarantee the profiles row exists immediately after sign-up so the
+    // first listing insert never hits a foreign key violation. When email
+    // confirmation is required there is no session yet; the auth-state
+    // listener performs the same bootstrap on confirmation/first sign-in.
+    if (data.user !== null && data.session !== null) {
+      await ensureProfileRow(data.user);
+    }
     return { ok: true };
   } catch (error: unknown) {
     return { ok: false, message: error instanceof Error ? error.message : "Unknown error" };
@@ -130,8 +224,13 @@ export async function signInWithPassword(email: string, password: string): Promi
     return { ok: false, message: "Supabase is not configured yet (missing VITE_SUPABASE_* variables)." };
   }
   try {
-    const { error } = await sb.auth.signInWithPassword({ email, password });
+    const { data, error } = await sb.auth.signInWithPassword({ email, password });
     if (error !== null) return { ok: false, message: error.message };
+    // Upsert the profiles row right after a successful sign-in so any
+    // subsequent listing insert satisfies the owner FK to public.profiles.
+    if (data.user !== null && data.session !== null) {
+      await ensureProfileRow(data.user);
+    }
     return { ok: true };
   } catch (error: unknown) {
     return { ok: false, message: error instanceof Error ? error.message : "Unknown error" };
@@ -179,12 +278,18 @@ export function subscribeToAuth(listener: Listener): () => void {
     listener({ status: "config-missing", user: null, session: null });
     return () => undefined;
   }
-  const { data } = sb.auth.onAuthStateChange((_event, session) => {
+  const { data } = sb.auth.onAuthStateChange((event, session) => {
     listener({
       status: session !== null ? "authenticated" : "unauthenticated",
       user: session?.user ?? null,
       session,
     });
+    // Bootstrap the profiles row whenever a session lands in the client —
+    // covers OAuth redirects (Google), magic-link confirmations and page
+    // loads with a persisted session. Fire-and-forget; never blocks UI.
+    if (session !== null && event !== "SIGNED_OUT") {
+      void ensureProfileRow(session.user);
+    }
   });
   return () => data.subscription.unsubscribe();
 }

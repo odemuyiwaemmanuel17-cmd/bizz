@@ -14,8 +14,8 @@
  * instead of throwing.
  */
 
-import type { SupabaseClient } from "@supabase/supabase-js";
-import { getSupabase, getSessionSafe, type AuthSnapshot } from "./supabase";
+import type { SupabaseClient, User } from "@supabase/supabase-js";
+import { getSupabase, getSessionSafe, ensureProfileRow, type AuthSnapshot } from "./supabase";
 import { normalizeFeedCategory, type FeedCategory } from "./feed";
 import { normalizeContactLink, CONTACT_LINK_PLACEHOLDER, type ContactChannel } from "./contact";
 
@@ -682,18 +682,41 @@ export async function publishListing(draft: ListingDraft): Promise<PublishResult
   }
   if (userId === null) return fail("not-authenticated", "Sign in before posting a bizz.");
 
+  /*
+   * Guarantee the profiles row exists BEFORE any insert: listings.owner_id
+   * and ideas.owner_id carry FKs to public.profiles(id), so a missing row
+   * surfaces as a confusing foreign key violation at publish time. The
+   * upsert is best-effort (a DB trigger may have already created it).
+   */
+  try {
+    const { data: profileCheck, error: profileError } = await sb
+      .from("profiles")
+      .select("id")
+      .eq("id", userId)
+      .maybeSingle();
+    if (profileError === null && profileCheck === null) {
+      const minimalUser: Pick<User, "id"> = { id: userId };
+      await ensureProfileRow(minimalUser as User);
+    }
+  } catch (err: unknown) {
+    console.warn("[publish] profile pre-check failed:", err);
+  }
+
   try {
     if (draft.isConcept) {
       const { data, error } = await sb
         .from("ideas")
         .insert({
           // Explicitly set to the verified logged-in user id so the insert
-          // satisfies the RLS policy: owner_id = auth.uid().
-          owner_id: userId,
+          // satisfies the RLS policy: user_id = auth.uid(). The live
+          // `ideas` table stores the creator in `user_id` and the pitch in
+          // `description` (owner_id/pitch/target_price_cents are legacy
+          // names that trip the PostgREST schema cache).
+          user_id: userId,
           title: draft.title.trim(),
-          pitch: draft.blurb.trim(),
+          description: draft.blurb.trim(),
           category: draft.category,
-          target_price_cents: draft.priceCents,
+          price_cents: draft.priceCents,
           image_url: draft.imageUrl,
           status: "open",
         })

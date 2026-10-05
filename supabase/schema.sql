@@ -223,3 +223,22 @@ alter table public.listings add column if not exists description text;
 
 -- Backfill any rows missing a pitch so the NOT NULL-style UX stays safe.
 update public.listings set description = '' where description is null;
+
+-- ========== Auth bootstrap compatibility (idempotent) ==========
+-- The web client upserts profiles with (id, email, full_name, avatar_url)
+-- right after sign-in/sign-up so listing inserts never hit a profiles FK
+-- violation. Ensure those columns exist and are nullable.
+alter table public.profiles add column if not exists email text;
+alter table public.profiles add column if not exists full_name text;
+alter table public.profiles add column if not exists avatar_url text;
+alter table public.profiles alter column handle drop not null;
+
+-- Relax the insert policy to allow the client-side upsert bootstrap
+-- (still restricted to auth.uid() = row id).
+drop policy if exists "own profile upsert" on public.profiles;
+create policy "own profile upsert" on public.profiles for insert with check (id = auth.uid());
+drop policy if exists "own profile save" on public.profiles;
+create policy "own profile save" on public.profiles for update using (id = auth.uid()) with check (id = auth.uid());
+
+-- Reload PostgREST schema cache so new columns are visible immediately.
+notify pgrst, 'reload schema';
