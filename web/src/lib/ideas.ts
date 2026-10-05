@@ -647,8 +647,23 @@ export async function publishListing(draft: ListingDraft): Promise<PublishResult
     return succeed({ id, title: draft.title.trim(), isConcept: draft.isConcept, imageUrl: draft.imageUrl });
   }
 
-  const snapshot: AuthSnapshot = await getSessionSafe();
-  const userId: string | null = snapshot.user?.id ?? null;
+  /*
+   * Resolve the acting user with a SERVER-side verification.
+   * `getSessionSafe()` reads the client's local storage token, which can be
+   * stale/expired — inserting with that id then trips RLS policies such as
+   * `with check (owner_id = auth.uid())`. `getUser()` hits the auth server,
+   * refreshes the token, and returns the authoritative uid used by RLS.
+   */
+  let userId: string | null = null;
+  try {
+    const { data: userData, error: userError } = await sb.auth.getUser();
+    if (userError !== null) throw userError;
+    userId = userData.user?.id ?? null;
+  } catch {
+    // Fall back to the cached session snapshot if the network call fails.
+    const snapshot: AuthSnapshot = await getSessionSafe();
+    userId = snapshot.user?.id ?? null;
+  }
   if (userId === null) return fail("not-authenticated", "Sign in before posting a bizz.");
 
   try {
@@ -656,6 +671,8 @@ export async function publishListing(draft: ListingDraft): Promise<PublishResult
       const { data, error } = await sb
         .from("ideas")
         .insert({
+          // Explicitly set to the verified logged-in user id so the insert
+          // satisfies the RLS policy: owner_id = auth.uid().
           owner_id: userId,
           title: draft.title.trim(),
           pitch: draft.blurb.trim(),
@@ -674,6 +691,8 @@ export async function publishListing(draft: ListingDraft): Promise<PublishResult
     const { data, error } = await sb
       .from("listings")
       .insert({
+        // Explicitly set to the verified logged-in user id so the insert
+        // satisfies the RLS policy: owner_id = auth.uid().
         owner_id: userId,
         title: draft.title.trim(),
         // Live Supabase schema stores the one-line pitch in `description`
@@ -685,7 +704,7 @@ export async function publishListing(draft: ListingDraft): Promise<PublishResult
         status: "active",
       })
       .select("id")
-      .single();
+        .single();
     if (error !== null) return fail("database", `Could not publish the listing: ${error.message}`);
     const row: InsertedRow = data as unknown as InsertedRow;
     return succeed({ id: row.id, title: draft.title.trim(), isConcept: false, imageUrl: draft.imageUrl });
