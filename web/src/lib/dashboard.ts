@@ -59,11 +59,24 @@ interface IdeaRow {
   readonly id: string;
   readonly title: string | null;
   readonly pitch: string | null;
+  readonly blurb?: string | null; // legacy column name on some deployments
   readonly category: string | null;
   readonly status: string | null;
   readonly created_at: string | null;
-  readonly idea_votes?: Array<{ readonly choice: string | null }>;
 }
+
+interface IdeaVoteRow {
+  readonly idea_id: string;
+  readonly choice: string | null;
+}
+
+/**
+ * Owner columns present on the live `ideas` table differ across deployments
+ * (schema drift). We filter with explicit `.eq()` calls per candidate column
+ * and keep whichever query returns rows — no embedded joins involved.
+ */
+const IDEA_OWNER_COLUMNS: ReadonlyArray<string> = ["owner_id", "user_id"];
+const LISTING_OWNER_COLUMNS: ReadonlyArray<string> = ["owner_id", "user_id"];
 
 const EMPTY_STATS: DashboardStats = Object.freeze({
   listingsPosted: 0,
@@ -71,6 +84,29 @@ const EMPTY_STATS: DashboardStats = Object.freeze({
   validatedIdeas: 0,
   totalVotesReceived: 0,
 });
+
+/** Small helper: run a plain (non-embedded) select filtered by an owner column. */
+async function selectOwnedRows<Row>(
+  sb: SupabaseClient,
+  table: string,
+  columns: string,
+  ownerColumns: ReadonlyArray<string>,
+  userId: string,
+): Promise<{ readonly rows: ReadonlyArray<Row>; readonly error: string | null }> {
+  let lastError: string | null = null;
+  for (const col of ownerColumns) {
+    try {
+      const res = await sb.from(table).select(columns).eq(col, userId).order("created_at", { ascending: false }).limit(100);
+      if (res.error === null) {
+        return { rows: Array.isArray(res.data) ? (res.data as unknown as Row[]) : [], error: null };
+      }
+      lastError = res.error.message;
+    } catch (err: unknown) {
+      lastError = err instanceof Error ? err.message : "Query failed";
+    }
+  }
+  return { rows: [], error: lastError ?? "Query failed" };
+}
 
 /** Fetches the current user's listings + ideas and derives dashboard stats. */
 export async function fetchCreatorDashboard(userId: string): Promise<DashboardResult> {
@@ -80,34 +116,28 @@ export async function fetchCreatorDashboard(userId: string): Promise<DashboardRe
   }
 
   try {
-    const [listingsRes, ideasRes] = await Promise.all([
-      sb
-        .from("listings")
-        // NOTE: do not select `votes_count` — that column does not exist on the
-        // live `listings` table and PostgREST rejects the whole query. Vote
-        // counts are derived from the `votes` table below instead.
-        .select("id, title, category, price_cents, image_url, created_at")
-        .eq("owner_id", userId)
-        .order("created_at", { ascending: false })
-        .limit(100),
-      sb
-        .from("ideas")
-        .select("id, title, pitch, category, status, created_at, idea_votes(choice)")
-        .eq("owner_id", userId)
-        .order("created_at", { ascending: false })
-        .limit(100),
-    ]);
+    // Two clean, separate queries — NO embedded joins like `idea_votes(choice)`
+    // or `votes_count`, which PostgREST rejects when FK metadata is missing.
+    // Query 1: the user's own listings (plain columns only).
+    const listingsQ = await selectOwnedRows<ListingRow>(
+      sb,
+      "listings",
+      "id, title, category, price_cents, image_url, created_at",
+      LISTING_OWNER_COLUMNS,
+      userId,
+    );
+    // Query 2: the user's own concepts (`select('*')` so we never reference a
+    // column that might not exist on the live table).
+    const conceptsQ = await selectOwnedRows<IdeaRow>(sb, "ideas", "*", IDEA_OWNER_COLUMNS, userId);
 
-    if (listingsRes.error !== null) {
-      return { ok: false, message: `Could not load your bizzes: ${listingsRes.error.message}` };
+    if (listingsQ.error !== null && listingsQ.rows.length === 0) {
+      return { ok: false, message: `Could not load your bizzes: ${listingsQ.error}` };
     }
-    if (ideasRes.error !== null) {
-      return { ok: false, message: `Could not load your concepts: ${ideasRes.error.message}` };
+    if (conceptsQ.error !== null && conceptsQ.rows.length === 0) {
+      return { ok: false, message: `Could not load your concepts: ${conceptsQ.error}` };
     }
 
-    const listingRows: ReadonlyArray<ListingRow> = Array.isArray(listingsRes.data)
-      ? (listingsRes.data as unknown as ListingRow[])
-      : [];
+    const listingRows: ReadonlyArray<ListingRow> = listingsQ.rows;
 
     // Derive per-listing vote counts from the `votes` table instead of a
     // `listings.votes_count` column, which does not exist in our schema.
@@ -148,25 +178,43 @@ export async function fetchCreatorDashboard(userId: string): Promise<DashboardRe
       })),
     );
 
-    const ideaRows: ReadonlyArray<IdeaRow> = Array.isArray(ideasRes.data)
-      ? (ideasRes.data as unknown as IdeaRow[])
-      : [];
+    const ideaRows: ReadonlyArray<IdeaRow> = conceptsQ.rows;
+
+    // Separate query for concept tallies: fetch the raw vote rows for these
+    // ideas and count them client-side — again with no join/embedded select.
+    const tallyByIdea: Map<string, { bizz: number; fizz: number }> = new Map();
+    if (ideaRows.length > 0) {
+      try {
+        const ideaVotesRes = await sb
+          .from("idea_votes")
+          .select("idea_id, choice")
+          .in("idea_id", ideaRows.map((row: IdeaRow): string => row.id))
+          .limit(5000);
+        if (ideaVotesRes.error === null && Array.isArray(ideaVotesRes.data)) {
+          for (const v of ideaVotesRes.data as ReadonlyArray<IdeaVoteRow>) {
+            const entry = tallyByIdea.get(v.idea_id) ?? { bizz: 0, fizz: 0 };
+            if (v.choice === "bizz") entry.bizz += 1;
+            else if (v.choice === "fizz") entry.fizz += 1;
+            tallyByIdea.set(v.idea_id, entry);
+          }
+        }
+      } catch {
+        // Best effort — concepts still render with zeroed tallies.
+      }
+    }
+
     let conceptVotesTotal: number = 0;
     const ideas: ReadonlyArray<DashboardIdea> = Object.freeze(
       ideaRows.map((row: IdeaRow): DashboardIdea => {
-        const choices: ReadonlyArray<string | null> = Array.isArray(row.idea_votes)
-          ? row.idea_votes.map((v) => v.choice)
-          : [];
-        const bizz: number = choices.filter((c) => c === "bizz").length;
-        const fizz: number = choices.filter((c) => c === "fizz").length;
-        conceptVotesTotal += bizz + fizz;
+        const counts = tallyByIdea.get(row.id) ?? { bizz: 0, fizz: 0 };
+        conceptVotesTotal += counts.bizz + counts.fizz;
         return {
           id: row.id,
           title: row.title ?? "Untitled concept",
-          pitch: row.pitch ?? "",
+          pitch: row.pitch ?? row.blurb ?? "",
           category: normalizeFeedCategory(row.category),
           status: row.status ?? "open",
-          tally: computeTally(bizz, fizz),
+          tally: computeTally(counts.bizz, counts.fizz),
           createdAt: row.created_at ?? new Date().toISOString(),
         };
       }),
