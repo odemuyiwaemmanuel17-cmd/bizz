@@ -28,8 +28,20 @@ export default function AuthPage(): ReactElement {
   const [mode, setMode] = useState<Mode>("signin");
   const [email, setEmail] = useState<string>("");
   const [password, setPassword] = useState<string>("");
-  const [error, setError] = useState<string | null>(null);
+  // Error state may hold a plain string OR an arbitrary thrown value/object
+  // (e.g. a Supabase AuthError). Never render it raw in JSX — objects would
+  // display as "{}". Always normalize through errorMessage().
+  const [error, setError] = useState<string | Record<string, unknown> | null>(null);
   const [busy, setBusy] = useState<boolean>(false);
+
+  /** Safely extract a human-readable message from any error shape. */
+  function errorMessage(value: string | Record<string, unknown> | null): string {
+    if (value === null) return "Something went wrong. Please try again.";
+    if (typeof value === "string") return value;
+    const candidate: unknown = value["message"] ?? value["error_description"] ?? value["error"];
+    if (typeof candidate === "string" && candidate.length > 0) return candidate;
+    return "Something went wrong. Please try again.";
+  }
 
   // Already signed in? Straight to the dashboard.
   useEffect(() => {
@@ -55,7 +67,9 @@ export default function AuthPage(): ReactElement {
         ? await signInPassword(email.trim(), password)
         : await signUp(email.trim(), password);
       if (!result.ok) {
-        setError(result.message);
+        setError(typeof result.message === "string" && result.message.length > 0
+          ? result.message
+          : errorMessage(null));
         return;
       }
       if (mode === "signup") {
@@ -78,7 +92,11 @@ export default function AuthPage(): ReactElement {
     setBusy(true);
     try {
       const result = await signInGoogle();
-      if (!result.ok) setError(result.message);
+      if (!result.ok) {
+        setError(typeof result.message === "string" && result.message.length > 0
+          ? result.message
+          : errorMessage(null));
+      }
       // On success Supabase redirects the browser to /dashboard.
     } finally {
       setBusy(false);
@@ -152,7 +170,7 @@ export default function AuthPage(): ReactElement {
 
           {error !== null && (
             <p role="alert" className="rounded-xl border border-red-400/30 bg-red-400/10 px-3 py-2 text-sm text-red-200">
-              {error}
+              {typeof error === "string" ? error : errorMessage(error)}
             </p>
           )}
 
