@@ -1,5 +1,10 @@
 -- HustleHub Supabase schema (Phases 2-4) — idempotent, safe to run multiple times.
 -- Run in Supabase Dashboard → SQL Editor.
+--
+-- NOTE: the live production database uses `listings.description` for the
+-- one-line pitch. The app reads/writes `description`. This file keeps the
+-- historical `blurb` name and adds a compatibility migration at the bottom
+-- that renames blurb -> description when present.
 
 create extension if not exists pgcrypto;
 
@@ -197,3 +202,24 @@ from auth.users u
 left join public.profiles p on p.id = u.id
 where p.id is null
 on conflict (id) do nothing;
+
+-- ========== Column-name compatibility: blurb -> description ==========
+-- The live database stores the one-line pitch in listings.description.
+-- If an older deployment created listings.blurb, rename it so both fresh
+-- and existing databases converge on `description`. Idempotent.
+
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'listings' and column_name = 'blurb'
+  ) then
+    alter table public.listings rename column blurb to description;
+  end if;
+end
+$$;
+
+alter table public.listings add column if not exists description text;
+
+-- Backfill any rows missing a pitch so the NOT NULL-style UX stays safe.
+update public.listings set description = '' where description is null;

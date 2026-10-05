@@ -136,7 +136,9 @@ export function formatPrice(priceCents: number, currency: string = "USD"): strin
 interface ListingRow {
   readonly id: string;
   readonly title: string | null;
-  readonly blurb: string | null;
+  /** Live schema column is `description`; older dumps used `blurb`. */
+  readonly description?: string | null;
+  readonly blurb?: string | null;
   readonly category: string | null;
   readonly price_cents: number | null;
   readonly created_at: string | null;
@@ -156,6 +158,12 @@ function toContactChannel(raw: string | null | undefined): ContactChannel {
   return raw === "telegram" ? "telegram" : "whatsapp";
 }
 
+function pitchOf(row: ListingRow): string {
+  if (typeof row.description === "string") return row.description;
+  if (typeof row.blurb === "string") return row.blurb;
+  return "";
+}
+
 function rowToCard(row: ListingRow): HustleCardData | null {
   const title: string = typeof row.title === "string" ? row.title.trim() : "";
   if (title.length === 0) return null; // defensive: skip malformed rows
@@ -168,7 +176,7 @@ function rowToCard(row: ListingRow): HustleCardData | null {
   return Object.freeze({
     id: row.id,
     title,
-    blurb: typeof row.blurb === "string" ? row.blurb : "",
+    blurb: pitchOf(row),
     category: normalizeFeedCategory(row.category),
     priceCents: typeof row.price_cents === "number" && Number.isFinite(row.price_cents) ? Math.max(0, Math.round(row.price_cents)) : 0,
     currency: "USD",
@@ -281,7 +289,7 @@ export async function fetchHustleFeed(query: FeedQuery = {}): Promise<FeedPage> 
     let builder = sb
       .from("listings")
       .select(
-        "id, title, blurb, category, price_cents, created_at, owner_id, votes:count, profiles:id,handle,display_name,avatar_url,contact_channel,contact_handle",
+        "id, title, description, category, price_cents, created_at, owner_id, votes:count, profiles:id,handle,display_name,avatar_url,contact_channel,contact_handle",
         { count: "exact" },
       )
       .eq("status", "active")

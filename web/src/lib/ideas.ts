@@ -676,7 +676,9 @@ export async function publishListing(draft: ListingDraft): Promise<PublishResult
       .insert({
         owner_id: userId,
         title: draft.title.trim(),
-        blurb: draft.blurb.trim(),
+        // Live Supabase schema stores the one-line pitch in `description`
+        // (the internal draft field name `blurb` is kept for UI/validation).
+        description: draft.blurb.trim(),
         category: draft.category,
         price_cents: draft.priceCents,
         image_url: draft.imageUrl,
