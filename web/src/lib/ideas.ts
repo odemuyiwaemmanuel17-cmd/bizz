@@ -688,26 +688,58 @@ export async function publishListing(draft: ListingDraft): Promise<PublishResult
       return succeed({ id: row.id, title: draft.title.trim(), isConcept: true, imageUrl: draft.imageUrl });
     }
 
-    const { data, error } = await sb
-      .from("listings")
-      .insert({
-        // Explicitly set to the verified logged-in user id so the insert
-        // satisfies the RLS policy: owner_id = auth.uid().
-        owner_id: userId,
-        title: draft.title.trim(),
-        // Live Supabase schema stores the one-line pitch in `description`
-        // (the internal draft field name `blurb` is kept for UI/validation).
-        description: draft.blurb.trim(),
-        category: draft.category,
-        price_cents: draft.priceCents,
-        image_url: draft.imageUrl,
-        status: "active",
-      })
-      .select("id")
-        .single();
-    if (error !== null) return fail("database", `Could not publish the listing: ${error.message}`);
-    const row: InsertedRow = data as unknown as InsertedRow;
-    return succeed({ id: row.id, title: draft.title.trim(), isConcept: false, imageUrl: draft.imageUrl });
+    /*
+     * Build the row payload. The live Supabase database may store the creator
+     * id under either `owner_id` (original schema) or `user_id` (current
+     * schema), and the price/contact columns have drifted too. Rather than
+     * hard-coding one shape, we try compatible payloads in order until the
+     * insert passes both the PostgREST schema cache and the RLS check
+     * (`<owner column> = auth.uid()`). Each attempt explicitly includes the
+     * verified logged-in user id — never relying on implicit defaults.
+     */
+    const trimmedTitle: string = draft.title.trim();
+    const trimmedPitch: string = draft.blurb.trim();
+
+    interface ListingPayload {
+      readonly [key: string]: string | number | null;
+    }
+
+    const baseFields = {
+      title: trimmedTitle,
+      category: draft.category,
+      image_url: draft.imageUrl,
+      status: "active",
+    } as const;
+
+    const attempts: ReadonlyArray<ListingPayload> = Object.freeze([
+      // Shape A — original schema: owner_id + description + price_cents.
+      { ...baseFields, owner_id: userId, description: trimmedPitch, price_cents: draft.priceCents },
+      // Shape B — current schema: explicit user_id (RLS: user_id = auth.uid()).
+      { ...baseFields, user_id: userId, description: trimmedPitch, price_cents: draft.priceCents },
+      // Shape C — variant with legacy `blurb` column name.
+      { ...baseFields, user_id: userId, blurb: trimmedPitch, price_cents: draft.priceCents },
+      // Shape D — variant where price is stored in major units.
+      { ...baseFields, user_id: userId, description: trimmedPitch, price: draft.priceCents / 100 },
+    ]);
+
+    let lastError: string | null = null;
+    for (const payload of attempts) {
+      try {
+        const { data, error } = await sb.from("listings").insert(payload).select("id").single();
+        if (error === null && data !== null) {
+          const row: InsertedRow = data as unknown as InsertedRow;
+          return succeed({ id: row.id, title: trimmedTitle, isConcept: false, imageUrl: draft.imageUrl });
+        }
+        lastError = error?.message ?? "Insert returned no row.";
+      } catch (err: unknown) {
+        lastError = err instanceof Error ? err.message : "Unknown database error";
+      }
+    }
+    return fail(
+      "database",
+      `Could not publish the listing: ${lastError ?? "insert failed"}. ` +
+        `The 'listings' table must have an owner column (user_id or owner_id) whose RLS insert policy checks it against auth.uid().`,
+    );
   } catch (err: unknown) {
     const message: string = err instanceof Error ? err.message : "Publish failed";
     return fail("network", message);

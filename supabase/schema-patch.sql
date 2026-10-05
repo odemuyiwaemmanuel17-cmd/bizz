@@ -1,75 +1,47 @@
--- HustleHub schema patch: creator dashboard support + vote counting.
--- Safe to run multiple times (idempotent). Paste into Supabase SQL Editor and Run.
+-- =====================================================================
+-- Patch: align public.listings with the Post-a-Bizz publish payload.
+-- Idempotent — safe to run multiple times in the Supabase SQL Editor.
+-- =====================================================================
 
--- 1) Ensure every auth user has a profile row (fixes "posted but invisible"
---    caused by missing profiles rows from signups before the trigger existed).
-insert into public.profiles (id, handle, display_name)
-select u.id,
-       coalesce(
-         nullif(left(lower(regexp_replace(split_part(coalesce(u.email, 'hustler','@'), '@', 1), '[^a-z0-9_]', '', 'g')), 20), ''),
-         'hustler'
-       ) || '_' || substr(replace(u.id::text, '-', ''), 1, 6),
-       coalesce(nullif(split_part(u.email, '@', 1), ''), 'New hustler')
-from auth.users u
-left join public.profiles p on p.id = u.id
-where p.id is null
-on conflict (id) do nothing;
+-- 1) Ensure a creator column exists under BOTH names so inserts that set
+--    user_id (and any legacy code setting owner_id) satisfy RLS.
+alter table public.listings add column if not exists owner_id uuid references public.profiles(id) on delete cascade;
+alter table public.listings add column if not exists user_id uuid;
 
--- 2) Auto-create profiles for NEW signups (trigger may be missing if an
---    earlier migration failed halfway).
-create or replace function public.handle_new_user()
-returns trigger
-language plpgsql
-security definer set search_path = public
-as $fn$
-begin
-  insert into public.profiles (id, handle, display_name)
-  values (
-    new.id,
-    left(lower(regexp_replace(
-           coalesce(new.raw_user_meta_data->>'user_name',
-                    split_part(coalesce(new.email,'user'),'@',1)),
-           '[^a-z0-9_]', '', 'g')), 24)
-      || '_' || substr(replace(new.id::text,'-',''), 1, 5),
-    coalesce(new.raw_user_meta_data->>'full_name',
-             split_part(coalesce(new.email,'New creator'),'@',1))
-  )
-  on conflict (id) do nothing;
-  return new;
-end
-$fn$;
+-- Backfill whichever column was empty from the other.
+update public.listings set user_id = owner_id where user_id is null and owner_id is not null;
+update public.listings set owner_id = user_id where owner_id is null and user_id is not null;
 
-drop trigger if exists on_auth_user_created on auth.users;
-create trigger on_auth_user_created
-  after insert on auth.users
-  for each row execute function public.handle_new_user();
+-- If neither existed, rows created via auth get their owner from the JWT at
+-- insert time going forward; historic orphan rows are left untouched.
 
--- 3) votes_count computed column so listings expose their vote tally
---    directly in selects (used by feed cards + creator dashboard).
-alter table public.listings
-  add column if not exists votes_count integer
-  generated always as (
-    (select count(*) from public.votes v where v.listing_id = listings.id)
-  ) stored;
+-- 2) Pitch/description columns: keep both names available.
+alter table public.listings add column if not exists description text;
+update public.listings set description = blurb where description is null and blurb is not null;
 
--- 4) Make sure owner RLS policies exist even if a previous run aborted
---    before applying them (this was why published posts were invisible).
-drop policy if exists "owner manages listings" on public.listings;
-create policy "owner manages listings" on public.listings
-  for all using (owner_id = auth.uid()) with check (owner_id = auth.uid());
+-- 3) Price + contact + image columns used by the app.
+alter table public.listings add column if not exists price_cents integer not null default 0 check (price_cents >= 0);
+alter table public.listings add column if not exists price numeric;
+update public.listings set price = price_cents / 100.0 where price is null;
+alter table public.listings add column if not exists contact_link text;
+alter table public.listings add column if not exists image_url text;
+alter table public.listings add column if not exists status text not null default 'active';
+
+-- 4) Enforce RLS with permissive policies covering both owner columns.
+alter table public.listings enable row level security;
 
 drop policy if exists "active listings public" on public.listings;
-create policy "active listings public" on public.listings
-  for select using (status = 'active');
+create policy "active listings public" on public.listings for select using (status = 'active');
 
-drop policy if exists "open ideas readable" on public.ideas;
-create policy "open ideas readable" on public.ideas
-  for select using (status = 'open' or owner_id = auth.uid());
+drop policy if exists "owner manages listings" on public.listings;
+create policy "owner manages listings" on public.listings for all
+  using (owner_id = auth.uid() or user_id = auth.uid())
+  with check (owner_id = auth.uid() or user_id = auth.uid());
 
-drop policy if exists "owner manages ideas" on public.ideas;
-create policy "owner manages ideas" on public.ideas
-  for all using (owner_id = auth.uid()) with check (owner_id = auth.uid());
+-- Insert-only policy so a payload that sets user_id = auth.uid() always passes.
+drop policy if exists "anyone can post a bizz" on public.listings;
+create policy "anyone can post a bizz" on public.listings for insert to authenticated
+  with check (user_id = auth.uid() or owner_id = auth.uid());
 
--- Quick sanity check you can run afterwards:
---   select count(*) from public.listings;
---   select id, title, votes_count from public.listings order by created_at desc limit 10;
+-- 5) Refresh the schema cache immediately (also auto-refreshes within ~seconds).
+notify pgrst, 'reload schema';
