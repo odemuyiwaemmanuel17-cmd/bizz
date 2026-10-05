@@ -1,7 +1,9 @@
-import type { ReactElement } from "react";
-import { useHustleFeed } from "../../hooks/useHustleFeed";
+import { useCallback, useState, type FormEvent, type ReactElement } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import HustleCard from "./HustleCard";
 import CategoryTabs from "./CategoryTabs";
+import { useHustleFeed } from "../../hooks/useHustleFeed";
+import type { HustleCardData } from "../../lib/feed";
 
 function SkeletonCard(): ReactElement {
   return (
@@ -15,9 +17,19 @@ function SkeletonCard(): ReactElement {
   );
 }
 
-/** The discovery feed: tabs + card grid + pagination controls. */
+/** The discovery feed: search + tabs + card grid + pagination controls. */
 export default function HustleFeed(): ReactElement {
+  const navigate = useNavigate();
   const feed = useHustleFeed("all");
+  const [searchDraft, setSearchDraft] = useState<string>("");
+
+  const handleSearchSubmit = useCallback(
+    (event: FormEvent<HTMLFormElement>): void => {
+      event.preventDefault();
+      feed.setSearch(searchDraft);
+    },
+    [feed, searchDraft],
+  );
 
   return (
     <section id="feed" className="mx-auto max-w-6xl scroll-mt-24 px-6 py-24">
@@ -36,7 +48,38 @@ export default function HustleFeed(): ReactElement {
         </p>
       </div>
 
-      <div className="mt-8">
+      {/* Search bar */}
+      <form onSubmit={handleSearchSubmit} className="mt-8 flex gap-2 sm:max-w-md">
+        <input
+          type="search"
+          value={searchDraft}
+          onChange={(event) => setSearchDraft(event.target.value)}
+          placeholder="Search hustles, e.g. “design”, “tutoring”…"
+          aria-label="Search hustles"
+          className="min-w-0 flex-1 rounded-xl border border-white/10 bg-black/30 px-4 py-2.5 text-sm outline-none transition focus:border-indigoGlow"
+        />
+        <button
+          type="submit"
+          className="shrink-0 rounded-xl bg-gradient-to-r from-indigoGlow to-violetGlow px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-indigoGlow/25 transition hover:brightness-110 active:scale-[0.97]"
+        >
+          Search
+        </button>
+        {feed.search !== "" && (
+          <button
+            type="button"
+            onClick={() => {
+              setSearchDraft("");
+              feed.setSearch("");
+            }}
+            className="shrink-0 rounded-xl border border-white/15 px-4 py-2.5 text-sm text-slate-300 transition hover:bg-white/10"
+            aria-label="Clear search"
+          >
+            Clear
+          </button>
+        )}
+      </form>
+
+      <div className="mt-6">
         <CategoryTabs active={feed.category} onSelect={feed.setCategory} />
       </div>
 
@@ -52,14 +95,24 @@ export default function HustleFeed(): ReactElement {
       <div className="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
         {feed.loading
           ? Array.from({ length: 6 }, (_unused: undefined, index: number) => <SkeletonCard key={`skeleton-${index}`} />)
-          : feed.items.map((card) => <HustleCard key={card.id} card={card} />)}
+          : feed.items.map((card: HustleCardData) => <HustleCard key={card.id} card={card} />)}
       </div>
 
       {!feed.loading && feed.items.length === 0 && (
         <div className="glass mt-10 rounded-3xl p-12 text-center">
-          <p className="text-lg font-semibold text-white">No hustles in this category yet</p>
+          <p className="text-lg font-semibold text-white">
+            {feed.search !== "" ? `No hustles match “${feed.search}”` : "No hustles in this category yet"}
+          </p>
           <p className="mx-auto mt-2 max-w-md text-sm text-slate-400">
-            Be the first — launch a micro-hustle here and collect validation votes within minutes.
+            Be the first — launch a micro-hustle here and collect validation votes within minutes.{" "}
+            <Link to="/auth?mode=signup" className="font-semibold text-cyanGlow underline-offset-2 hover:underline">
+              Sign up
+            </Link>{" "}
+            or{" "}
+            <button type="button" onClick={() => navigate("/validation")} className="font-semibold text-cyanGlow underline-offset-2 hover:underline">
+              test a concept
+            </button>{" "}
+            now.
           </p>
         </div>
       )}

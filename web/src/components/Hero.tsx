@@ -1,11 +1,8 @@
 import { Suspense, lazy, useEffect, useRef, useState, type ReactElement } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { usePrefersReducedMotion } from "./ui/micro";
 
 const HeroBadge = lazy(() => import("./webgl/HeroBadge"));
-
-interface HeroProps {
-  readonly onPrimaryClick: () => void;
-}
 
 /** WebGL-disabled fallback so the hero still renders on old devices. */
 function BadgeSkeleton(): ReactElement {
@@ -28,7 +25,8 @@ function detectWebGL(): boolean {
   }
 }
 
-export default function Hero({ onPrimaryClick }: HeroProps): ReactElement {
+export default function Hero(): ReactElement {
+  const navigate = useNavigate();
   const reducedMotion: boolean = usePrefersReducedMotion();
   const sectionRef = useRef<HTMLElement | null>(null);
   const [inView, setInView] = useState<boolean>(() => typeof window === "undefined");
@@ -94,17 +92,17 @@ export default function Hero({ onPrimaryClick }: HeroProps): ReactElement {
 
           <div className="pointer-events-auto mt-9 flex flex-wrap items-center gap-4">
             <button
-              onClick={onPrimaryClick}
+              onClick={() => navigate("/auth?mode=signup")}
               className="rounded-2xl bg-gradient-to-r from-indigoGlow to-violetGlow px-7 py-3.5 text-base font-semibold text-white shadow-xl shadow-indigoGlow/30 transition hover:-translate-y-0.5 hover:brightness-110"
             >
               Start a micro-hustle
             </button>
-            <a
-              href="#discover"
+            <Link
+              to="/discover"
               className="glass rounded-2xl px-7 py-3.5 text-base font-semibold text-slate-200 transition hover:bg-white/10"
             >
               Browse listings ↓
-            </a>
+            </Link>
           </div>
 
           <dl className="mt-12 grid max-w-md grid-cols-3 gap-6 text-sm">

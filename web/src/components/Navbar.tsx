@@ -1,43 +1,34 @@
-import { useState, type FormEvent, type ReactElement } from "react";
+import { useEffect, type ReactElement } from "react";
+import { useLocation } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { useToast } from "./ui/Toaster";
 
 interface NavbarProps {
-  readonly onWaitlistClick: () => void;
   readonly onPostBizzClick?: () => void;
 }
 
-const LINKS: ReadonlyArray<{ label: string; href: string }> = [
-  { label: "How it works", href: "#how-it-works" },
-  { label: "Discover", href: "#feed" },
-  { label: "Validation", href: "#validate" },
-  { label: "Dashboard", href: "#dashboard" },
+const LINKS: ReadonlyArray<{ label: string; to: string }> = [
+  { label: "Home", to: "/" },
+  { label: "Discover", to: "/discover" },
+  { label: "Validation", to: "/validation" },
+  { label: "Dashboard", to: "/dashboard" },
 ];
 
-export default function Navbar({ onWaitlistClick, onPostBizzClick }: NavbarProps): ReactElement {
-  const { isAuthenticated, user, signIn, signOut } = useAuth();
-  const toast = useToast();
-  const [email, setEmail] = useState<string>("");
-  const [sending, setSending] = useState<boolean>(false);
+/** Returns true when the current pathname matches a nav link (exact for "/"). */
+function isActive(pathname: string, to: string): boolean {
+  return to === "/" ? pathname === "/" : pathname.startsWith(to);
+}
 
-  async function handleSignIn(event: FormEvent<HTMLFormElement>): Promise<void> {
-    event.preventDefault();
-    if (sending) return;
-    const trimmed: string = email.trim();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(trimmed)) {
-      toast.push({ title: "Enter a valid email address.", tone: "error" });
-      return;
-    }
-    setSending(true);
-    const result = await signIn(trimmed);
-    setSending(false);
-    if (result.ok) {
-      toast.push({ title: `Magic link sent to ${trimmed}`, description: "Check your inbox — the token expires in minutes.", tone: "success" });
-      setEmail("");
-    } else {
-      toast.push({ title: "Sign-in failed", description: result.message, tone: "error" });
-    }
-  }
+export default function Navbar({ onPostBizzClick }: NavbarProps): ReactElement {
+  const { isAuthenticated, user, signOut } = useAuth();
+  const toast = useToast();
+  const location = useLocation();
+
+  // Scroll to top whenever the route changes (multi-page UX).
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: "instant" as ScrollBehavior });
+  }, [location.pathname]);
 
   function handleSignOut(): void {
     void signOut();
@@ -47,19 +38,22 @@ export default function Navbar({ onWaitlistClick, onPostBizzClick }: NavbarProps
   return (
     <header className="fixed inset-x-0 top-0 z-50">
       <nav className="glass mx-auto mt-4 flex max-w-6xl flex-wrap items-center justify-between gap-x-4 gap-y-3 rounded-2xl px-4 py-3 shadow-lg shadow-black/30 sm:px-5">
-        <a href="#top" className="flex items-center gap-2 text-sm font-semibold tracking-tight sm:text-base">
+        <Link to="/" className="flex items-center gap-2 text-sm font-semibold tracking-tight sm:text-base">
           <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-indigoGlow via-violetGlow to-cyanGlow text-sm font-black text-white transition-transform duration-300 hover:rotate-[24deg]">
             H
           </span>
           HustleHub
-        </a>
+        </Link>
 
         <ul className="hidden items-center gap-6 text-sm text-slate-300 md:flex">
           {LINKS.map((link) => (
-            <li key={link.href}>
-              <a className="transition hover:text-white" href={link.href}>
+            <li key={link.to}>
+              <Link
+                className={`transition hover:text-white ${isActive(location.pathname, link.to) ? "font-semibold text-white" : ""}`}
+                to={link.to}
+              >
                 {link.label}
-              </a>
+              </Link>
             </li>
           ))}
         </ul>
@@ -78,24 +72,12 @@ export default function Navbar({ onWaitlistClick, onPostBizzClick }: NavbarProps
               </button>
             </>
           ) : (
-            <form onSubmit={(e) => void handleSignIn(e)} className="hidden items-center gap-2 sm:flex">
-              <input
-                type="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@sideproject.dev"
-                aria-label="Email for magic sign-in link"
-                className="w-40 rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none transition focus:border-indigoGlow lg:w-52"
-              />
-              <button
-                type="submit"
-                disabled={sending}
-                className="rounded-xl bg-gradient-to-r from-indigoGlow to-violetGlow px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-indigoGlow/25 transition hover:brightness-110 active:scale-[0.97] disabled:cursor-wait disabled:opacity-60"
-              >
-                {sending ? "Sending…" : "Sign in"}
-              </button>
-            </form>
+            <Link
+              to="/auth"
+              className="hidden rounded-xl bg-gradient-to-r from-indigoGlow to-violetGlow px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-indigoGlow/25 transition hover:brightness-110 active:scale-[0.97] sm:block"
+            >
+              Sign in
+            </Link>
           )}
           {onPostBizzClick !== undefined && (
             <button
@@ -105,37 +87,21 @@ export default function Navbar({ onWaitlistClick, onPostBizzClick }: NavbarProps
               + Post a Bizz
             </button>
           )}
-          <button
-            onClick={onWaitlistClick}
-            className="hidden rounded-xl border border-cyanGlow/40 px-4 py-2 text-sm font-semibold text-cyanGlow transition hover:bg-cyanGlow/10 lg:block"
-          >
-            Join waitlist
-          </button>
         </div>
 
-        {/* Mobile row: compact magic-link sign-in stays reachable on phones */}
-        {!isAuthenticated && (
-          <form onSubmit={(e) => void handleSignIn(e)} className="flex w-full items-center gap-2 sm:hidden">
-            <input
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@sideproject.dev"
-              aria-label="Email for magic sign-in link"
-              inputMode="email"
-              autoComplete="email"
-              className="min-w-0 flex-1 rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none transition focus:border-indigoGlow"
-            />
-            <button
-              type="submit"
-              disabled={sending}
-              className="shrink-0 rounded-xl bg-gradient-to-r from-indigoGlow to-violetGlow px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-indigoGlow/25 transition hover:brightness-110 active:scale-[0.97] disabled:cursor-wait disabled:opacity-60"
-            >
-              {sending ? "Sending…" : "Sign in"}
-            </button>
-          </form>
-        )}
+        {/* Mobile row: nav links stay reachable on phones */}
+        <ul className="flex w-full items-center justify-around gap-2 text-sm text-slate-300 md:hidden">
+          {LINKS.map((link) => (
+            <li key={link.to}>
+              <Link
+                className={`transition hover:text-white ${isActive(location.pathname, link.to) ? "font-semibold text-white" : ""}`}
+                to={link.to}
+              >
+                {link.label}
+              </Link>
+            </li>
+          ))}
+        </ul>
       </nav>
     </header>
   );

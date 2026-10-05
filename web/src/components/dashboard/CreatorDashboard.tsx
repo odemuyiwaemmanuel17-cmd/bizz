@@ -1,4 +1,5 @@
 /** Creator dashboard: stats cards + lists of the user's bizzes & concepts. */
+import { useState } from "react";
 import { useCreatorDashboard } from "../../hooks/useCreatorDashboard";
 import { formatPrice, type FeedCategory } from "../../lib/feed";
 import { isValidated } from "../../lib/ideas";
@@ -79,8 +80,11 @@ function IdeaRow({ idea }: { readonly idea: DashboardIdea }) {
   );
 }
 
+type DashTab = "gigs" | "concepts";
+
 export function CreatorDashboard() {
   const dash = useCreatorDashboard();
+  const [tab, setTab] = useState<DashTab>("gigs");
 
   if (!dash.isAuthenticated) {
     return (
@@ -136,9 +140,34 @@ export function CreatorDashboard() {
         </div>
       )}
 
-      <div className="mt-8 grid gap-8 lg:grid-cols-2">
-        {dash.listings.length > 0 && (
-          <div>
+      {/* Tab switching: gigs vs concepts, cleanly separated */}
+      <div role="tablist" aria-label="Dashboard sections" className="mt-6 grid max-w-lg grid-cols-2 gap-1 rounded-xl bg-white/5 p-1">
+        {(
+          [
+            { id: "gigs", label: `📌 My Active Gigs & Listings (${dash.listings.length})` },
+            { id: "concepts", label: `💡 My “Bizz or Fizz” Concepts (${dash.ideas.length})` },
+          ] as const
+        ).map((t) => (
+          <button
+            key={t.id}
+            role="tab"
+            type="button"
+            aria-selected={tab === t.id}
+            onClick={() => setTab(t.id)}
+            className={`rounded-lg px-3 py-2 text-xs font-semibold transition sm:text-sm ${
+              tab === t.id
+                ? "bg-gradient-to-r from-indigoGlow to-violetGlow text-white shadow"
+                : "text-slate-300 hover:text-white"
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "gigs" && (
+        dash.listings.length > 0 ? (
+          <div className="mt-6">
             <h3 className="mb-3 text-sm font-semibold uppercase tracking-wider text-slate-300">
               📌 Your bizzes ({dash.listings.length})
             </h3>
@@ -148,9 +177,14 @@ export function CreatorDashboard() {
               ))}
             </ul>
           </div>
-        )}
-        {dash.ideas.length > 0 && (
-          <div>
+        ) : !nothingYet ? (
+          <p className="mt-6 text-sm text-slate-400">No active gigs yet — post one from the navbar.</p>
+        ) : null
+      )}
+
+      {tab === "concepts" && (
+        dash.ideas.length > 0 ? (
+          <div className="mt-6">
             <h3 className="mb-3 text-sm font-semibold uppercase tracking-wider text-slate-300">
               💡 Your concepts ({dash.ideas.length})
             </h3>
@@ -160,8 +194,10 @@ export function CreatorDashboard() {
               ))}
             </ul>
           </div>
-        )}
-      </div>
+        ) : !nothingYet ? (
+          <p className="mt-6 text-sm text-slate-400">No validation concepts yet — post a concept idea.</p>
+        ) : null
+      )}
     </section>
   );
 }

@@ -2,9 +2,13 @@ import { useCallback, useEffect, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 import {
   getSessionSafe,
+  signInWithGoogle,
   signInWithMagicLink,
+  signInWithPassword,
   signOut as sbSignOut,
+  signUpWithEmail,
   subscribeToAuth,
+  type AuthResult,
   type AuthSnapshot,
   type AuthStatus,
 } from "../lib/supabase";
@@ -13,7 +17,10 @@ export interface UseAuthResult {
   readonly status: AuthStatus;
   readonly user: User | null;
   readonly isAuthenticated: boolean;
-  readonly signIn: (email: string) => Promise<{ ok: true } | { ok: false; message: string }>;
+  readonly signIn: (email: string) => Promise<AuthResult>;
+  readonly signInPassword: (email: string, password: string) => Promise<AuthResult>;
+  readonly signUp: (email: string, password: string) => Promise<AuthResult>;
+  readonly signInGoogle: () => Promise<AuthResult>;
   readonly signOut: () => Promise<void>;
 }
 
@@ -42,6 +49,18 @@ export function useAuth(): UseAuthResult {
     [],
   );
 
+  const signInPassword = useCallback(
+    (email: string, password: string) => signInWithPassword(email, password),
+    [],
+  );
+
+  const signUp = useCallback(
+    (email: string, password: string) => signUpWithEmail(email, password),
+    [],
+  );
+
+  const signInGoogle = useCallback(() => signInWithGoogle(), []);
+
   const signOut = useCallback(async (): Promise<void> => {
     const next: AuthSnapshot = await sbSignOut();
     setSnapshot(next);
@@ -52,6 +71,9 @@ export function useAuth(): UseAuthResult {
     user: snapshot.user,
     isAuthenticated: snapshot.status === "authenticated" && snapshot.user !== null,
     signIn,
+    signInPassword,
+    signUp,
+    signInGoogle,
     signOut,
   };
 }

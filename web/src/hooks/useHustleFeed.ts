@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   DEFAULT_PAGE_SIZE,
   fetchHustleFeed,
+  filterCardsBySearch,
   type FeedCategory,
   type FeedPage,
   type HustleCardData,
@@ -16,6 +17,8 @@ export interface UseHustleFeedResult {
   readonly loading: boolean;
   readonly error: string | null;
   readonly category: FeedCategory;
+  readonly search: string;
+  readonly setSearch: (search: string) => void;
   readonly setCategory: (category: FeedCategory) => void;
   readonly setPage: (page: number) => void;
   readonly next: () => void;
@@ -29,9 +32,19 @@ const EMPTY_PAGE: FeedPage = Object.freeze({ items: Object.freeze([]), total: 0,
 export function useHustleFeed(initialCategory: FeedCategory = "all"): UseHustleFeedResult {
   const [category, setCategoryState] = useState<FeedCategory>(initialCategory);
   const [page, setPageState] = useState<number>(1);
+  const [search, setSearchState] = useState<string>("");
   const [feed, setFeed] = useState<FeedPage>(EMPTY_PAGE);
   const [loading, setLoading] = useState<boolean>(true);
   const requestIdRef = useRef<number>(0);
+
+  /** Debounce search so typing doesn't hammer Supabase. */
+  const [debouncedSearch, setDebouncedSearch] = useState<string>("");
+  useEffect(() => {
+    const timer: ReturnType<typeof setTimeout> = setTimeout(() => {
+      setDebouncedSearch(search);
+    }, 250);
+    return (): void => clearTimeout(timer);
+  }, [search]);
 
   const load = useCallback((): void => {
     const requestId: number = ++requestIdRef.current;
@@ -46,6 +59,11 @@ export function useHustleFeed(initialCategory: FeedCategory = "all"): UseHustleF
   useEffect(() => {
     load();
   }, [load]);
+
+  const setSearch = useCallback((next: string): void => {
+    setSearchState(next);
+    setPageState(1);
+  }, []);
 
   const setCategory = useCallback((next: FeedCategory): void => {
     setCategoryState(next);
@@ -69,8 +87,14 @@ export function useHustleFeed(initialCategory: FeedCategory = "all"): UseHustleF
     setPageState((current: number) => Math.max(1, current - 1));
   }, []);
 
+  /** Client-side search applied to the fetched page (title/blurb/creator). */
+  const items: ReadonlyArray<HustleCardData> = useMemo(
+    (): ReadonlyArray<HustleCardData> => filterCardsBySearch(feed.items, debouncedSearch),
+    [feed.items, debouncedSearch],
+  );
+
   return {
-    items: feed.items,
+    items,
     total: feed.total,
     page: feed.page,
     pageSize: feed.pageSize,
@@ -78,6 +102,8 @@ export function useHustleFeed(initialCategory: FeedCategory = "all"): UseHustleF
     loading,
     error: feed.error,
     category,
+    search,
+    setSearch,
     setCategory,
     setPage,
     next,

@@ -86,6 +86,23 @@ export interface FeedQuery {
   readonly category?: FeedCategory;
   readonly page?: number;
   readonly pageSize?: number;
+  /** Case-insensitive substring match on title/blurb (client-side). */
+  readonly search?: string;
+}
+
+/** Pure helper: filter cards by a search term across title, blurb and creator name. */
+export function filterCardsBySearch(
+  cards: ReadonlyArray<HustleCardData>,
+  search: string,
+): ReadonlyArray<HustleCardData> {
+  const needle: string = search.trim().toLowerCase();
+  if (needle.length === 0) return cards;
+  return cards.filter(
+    (card: HustleCardData): boolean =>
+      card.title.toLowerCase().includes(needle) ||
+      card.blurb.toLowerCase().includes(needle) ||
+      card.creator.displayName.toLowerCase().includes(needle),
+  );
 }
 
 export const DEFAULT_PAGE_SIZE = 12;

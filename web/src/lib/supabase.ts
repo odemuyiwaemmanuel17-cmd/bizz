@@ -99,6 +99,63 @@ export async function signInWithMagicLink(
   }
 }
 
+export type AuthResult = { ok: true } | { ok: false; message: string };
+
+/** Email/password sign-up. Creates the auth user (profile row is auto-created by trigger). */
+export async function signUpWithEmail(
+  email: string,
+  password: string,
+): Promise<AuthResult> {
+  const sb: SupabaseClient | null = getSupabase();
+  if (sb === null) {
+    return { ok: false, message: "Supabase is not configured yet (missing VITE_SUPABASE_* variables)." };
+  }
+  try {
+    const { error } = await sb.auth.signUp({
+      email,
+      password,
+      options: { emailRedirectTo: window.location.origin + "/dashboard" },
+    });
+    if (error !== null) return { ok: false, message: error.message };
+    return { ok: true };
+  } catch (error: unknown) {
+    return { ok: false, message: error instanceof Error ? error.message : "Unknown error" };
+  }
+}
+
+/** Email/password sign-in. */
+export async function signInWithPassword(email: string, password: string): Promise<AuthResult> {
+  const sb: SupabaseClient | null = getSupabase();
+  if (sb === null) {
+    return { ok: false, message: "Supabase is not configured yet (missing VITE_SUPABASE_* variables)." };
+  }
+  try {
+    const { error } = await sb.auth.signInWithPassword({ email, password });
+    if (error !== null) return { ok: false, message: error.message };
+    return { ok: true };
+  } catch (error: unknown) {
+    return { ok: false, message: error instanceof Error ? error.message : "Unknown error" };
+  }
+}
+
+/** Google OAuth redirect flow. On success the browser navigates away; errors resolve typed. */
+export async function signInWithGoogle(): Promise<AuthResult> {
+  const sb: SupabaseClient | null = getSupabase();
+  if (sb === null) {
+    return { ok: false, message: "Supabase is not configured yet (missing VITE_SUPABASE_* variables)." };
+  }
+  try {
+    const { error } = await sb.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: window.location.origin + "/dashboard" },
+    });
+    if (error !== null) return { ok: false, message: error.message };
+    return { ok: true }; // redirect in flight
+  } catch (error: unknown) {
+    return { ok: false, message: error instanceof Error ? error.message : "Unknown error" };
+  }
+}
+
 /** Sign out; always resolves to an ok snapshot on failure so UI can reset. */
 export async function signOut(): Promise<AuthSnapshot> {
   const sb: SupabaseClient | null = getSupabase();
