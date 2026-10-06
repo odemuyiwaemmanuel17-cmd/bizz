@@ -51,7 +51,10 @@ interface ListingRow {
   readonly title: string | null;
   readonly category: string | null;
   readonly price_cents: number | null;
+  /** Alternate live-schema variant storing whole-dollar prices. */
+  readonly price?: number | null;
   readonly image_url: string | null;
+  readonly status?: string | null;
   readonly created_at: string | null;
 }
 
@@ -118,14 +121,11 @@ export async function fetchCreatorDashboard(userId: string): Promise<DashboardRe
   try {
     // Two clean, separate queries — NO embedded joins like `idea_votes(choice)`
     // or `votes_count`, which PostgREST rejects when FK metadata is missing.
-    // Query 1: the user's own listings (plain columns only).
-    const listingsQ = await selectOwnedRows<ListingRow>(
-      sb,
-      "listings",
-      "id, title, category, price_cents, image_url, created_at",
-      LISTING_OWNER_COLUMNS,
-      userId,
-    );
+    // Query 1: the user's own listings. Plain columns with tolerant fallbacks
+    // (e.g. `price` in dollars when `price_cents` is absent on this variant),
+    // filtered by owner_id OR user_id — never embedded joins or count aliases.
+    const listingCols = "id, title, description, blurb, category, price_cents, price, image_url, status, created_at, owner_id, user_id";
+    const listingsQ = await selectOwnedRows<ListingRow>(sb, "listings", listingCols, LISTING_OWNER_COLUMNS, userId);
     // Query 2: the user's own concepts (`select('*')` so we never reference a
     // column that might not exist on the live table).
     const conceptsQ = await selectOwnedRows<IdeaRow>(sb, "ideas", "*", IDEA_OWNER_COLUMNS, userId);
@@ -171,7 +171,12 @@ export async function fetchCreatorDashboard(userId: string): Promise<DashboardRe
         id: row.id,
         title: row.title ?? "Untitled bizz",
         category: normalizeFeedCategory(row.category),
-        priceCents: typeof row.price_cents === "number" && Number.isFinite(row.price_cents) ? Math.max(0, Math.round(row.price_cents)) : 0,
+        priceCents:
+          typeof row.price_cents === "number" && Number.isFinite(row.price_cents)
+            ? Math.max(0, Math.round(row.price_cents))
+            : typeof row.price === "number" && Number.isFinite(row.price)
+              ? Math.max(0, Math.round(row.price * 100)) // dollars → cents
+              : 0,
         imageUrl: row.image_url ?? null,
         votesCount: votesByListing.get(row.id) ?? 0,
         createdAt: row.created_at ?? new Date().toISOString(),

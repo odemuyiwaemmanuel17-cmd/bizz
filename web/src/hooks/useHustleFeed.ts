@@ -3,6 +3,7 @@ import {
   DEFAULT_PAGE_SIZE,
   fetchHustleFeed,
   filterCardsBySearch,
+  hydrateVotes,
   type FeedCategory,
   type FeedPage,
   type HustleCardData,
@@ -35,6 +36,7 @@ export function useHustleFeed(initialCategory: FeedCategory = "all"): UseHustleF
   const [search, setSearchState] = useState<string>("");
   const [feed, setFeed] = useState<FeedPage>(EMPTY_PAGE);
   const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
   const requestIdRef = useRef<number>(0);
 
   /** Debounce search so typing doesn't hammer Supabase. */
@@ -49,11 +51,29 @@ export function useHustleFeed(initialCategory: FeedCategory = "all"): UseHustleF
   const load = useCallback((): void => {
     const requestId: number = ++requestIdRef.current;
     setLoading(true);
-    void fetchHustleFeed({ category, page, pageSize: DEFAULT_PAGE_SIZE }).then((result: FeedPage) => {
-      if (requestId !== requestIdRef.current) return; // stale response — ignore
-      setFeed(result);
-      setLoading(false);
-    });
+    setError(null);
+    void fetchHustleFeed({ category, page, pageSize: DEFAULT_PAGE_SIZE })
+      .then(async (result: FeedPage) => {
+        if (requestId !== requestIdRef.current) return; // stale response — ignore
+        // Hydrate live vote tallies (best effort; never hides listings).
+        let items: ReadonlyArray<HustleCardData> = result.items;
+        try {
+          items = await hydrateVotes(result.items);
+        } catch {
+          /* decorative only */
+        }
+        if (requestId !== requestIdRef.current) return;
+        setFeed(Object.freeze({ ...result, items }));
+        setError(result.error);
+        setLoading(false);
+      })
+      .catch((err: unknown): void => {
+        if (requestId !== requestIdRef.current) return;
+        // No silent masking: surface unexpected failures in the UI banner.
+        setFeed(EMPTY_PAGE);
+        setError(err instanceof Error ? err.message : "Feed failed to load");
+        setLoading(false);
+      });
   }, [category, page]);
 
   useEffect(() => {
@@ -100,7 +120,7 @@ export function useHustleFeed(initialCategory: FeedCategory = "all"): UseHustleF
     pageSize: feed.pageSize,
     totalPages,
     loading,
-    error: feed.error,
+    error: error ?? feed.error,
     category,
     search,
     setSearch,

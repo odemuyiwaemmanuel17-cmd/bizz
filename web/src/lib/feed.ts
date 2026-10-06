@@ -132,7 +132,18 @@ export function formatPrice(priceCents: number, currency: string = "USD"): strin
 /* Row mapping                                                         */
 /* ------------------------------------------------------------------ */
 
-/** Raw shape returned by the select below (join may be null). */
+interface ProfileLite {
+  readonly id: string;
+  readonly handle?: string | null;
+  readonly display_name?: string | null;
+  readonly full_name?: string | null;
+  readonly email?: string | null;
+  readonly avatar_url?: string | null;
+  readonly contact_channel?: string | null;
+  readonly contact_handle?: string | null;
+}
+
+/** Raw shape returned by the plain listings select (profile hydrated separately). */
 interface ListingRow {
   readonly id: string;
   readonly title: string | null;
@@ -143,14 +154,8 @@ interface ListingRow {
   readonly price_cents: number | null;
   readonly created_at: string | null;
   readonly owner_id: string | null;
-  readonly profiles: {
-    readonly id: string;
-    readonly handle: string | null;
-    readonly display_name: string | null;
-    readonly avatar_url: string | null;
-    readonly contact_channel: string | null;
-    readonly contact_handle: string | null;
-  } | null;
+  readonly user_id?: string | null;
+  readonly profiles?: ProfileLite | null;
   readonly votes_count?: number | null;
 }
 
@@ -167,10 +172,12 @@ function pitchOf(row: ListingRow): string {
 function rowToCard(row: ListingRow): HustleCardData | null {
   const title: string = typeof row.title === "string" ? row.title.trim() : "";
   if (title.length === 0) return null; // defensive: skip malformed rows
-  const profile = row.profiles;
+  const profile = row.profiles ?? null;
   const creator: CreatorInfo = Object.freeze({
-    id: profile?.id ?? row.owner_id ?? "unknown",
-    displayName: profile?.display_name ?? profile?.handle ?? "Hustler",
+    id: profile?.id ?? row.owner_id ?? row.user_id ?? "unknown",
+    displayName:
+      profile?.display_name ?? profile?.full_name ?? profile?.handle
+      ?? (typeof profile?.email === "string" && profile.email.length > 0 ? profile.email.split("@")[0] ?? "Hustler" : "Hustler"),
     avatarUrl: profile?.avatar_url ?? null,
   });
   return Object.freeze({
@@ -286,28 +293,85 @@ export async function fetchHustleFeed(query: FeedQuery = {}): Promise<FeedPage> 
   }
 
   try {
-    let builder = sb
-      .from("listings")
-      .select(
-        "id, title, description, category, price_cents, created_at, owner_id, votes:count, profiles:id,handle,display_name,avatar_url,contact_channel,contact_handle",
-        { count: "exact" },
-      )
-      .eq("status", "active")
-      .order("created_at", { ascending: false })
-      .range((page - 1) * pageSize, (page - 1) * pageSize + pageSize - 1);
+    /*
+     * Robust fetch strategy (fixes "published but not rendering"):
+     *  1. Plain `select("*")` — never embedded joins (`profiles(...)`) or
+     *     aggregate aliases (`votes:count`), which throw schema-relationship
+     *     errors when FK metadata is missing and abort the whole page load.
+     *  2. NO `.eq("status","active")` filter on the first attempt — rows whose
+     *     status column is NULL/missing would be silently excluded. If that
+     *     returns zero rows we retry WITH the active filter (canonical path).
+     *  3. Creator info is hydrated afterwards from `profiles` via a separate
+     *     plain query (best-effort; failures degrade to defaults, never hide
+     *     listings).
+     */
+    const rangeFrom: number = (page - 1) * pageSize;
+    const runQuery = async (withStatusFilter: boolean): Promise<{ readonly rows: ReadonlyArray<ListingRow>; readonly count: number | null; readonly error: string | null }> => {
+      try {
+        let builder = sb.from("listings").select("*", { count: "exact" });
+        if (withStatusFilter) builder = builder.eq("status", "active");
+        const schemaValues: string[] =
+          category === "all"
+            ? []
+            : Object.keys(SCHEMA_CATEGORY_ALIASES).filter((key: string) => SCHEMA_CATEGORY_ALIASES[key] === category);
+        if (schemaValues.length > 0) builder = builder.in("category", schemaValues);
+        const { data, count, error } = await builder
+          .order("created_at", { ascending: false })
+          .range(rangeFrom, rangeFrom + pageSize - 1);
+        if (error !== null) return { rows: [], count: null, error: error.message };
+        return { rows: Array.isArray(data) ? (data as unknown as ListingRow[]) : [], count, error: null };
+      } catch (err: unknown) {
+        return { rows: [], count: null, error: err instanceof Error ? err.message : "Query failed" };
+      }
+    };
 
-    if (category !== "all") {
-      const schemaValues: string[] = Object.keys(SCHEMA_CATEGORY_ALIASES).filter(
-        (key: string) => SCHEMA_CATEGORY_ALIASES[key] === category,
-      );
-      builder = builder.in("category", schemaValues);
+    // Primary attempt WITHOUT the status filter (so NULL/missing statuses can't
+    // hide rows); retry WITH `.eq("status","active")` only if it errored or
+    // returned nothing while archived/draft rows might exist.
+    let result = await runQuery(false);
+    if (result.error !== null || result.rows.length === 0) {
+      const filtered = await runQuery(true);
+      if (result.error !== null && filtered.error === null) {
+        result = filtered;
+      } else if (result.rows.length === 0 && filtered.rows.length > 0) {
+        result = filtered;
+      }
+    }
+    if (result.error !== null) {
+      // Last resort: minimal unfiltered fetch so at least something renders.
+      try {
+        const fallback = await sb.from("listings").select("*").range(rangeFrom, rangeFrom + pageSize - 1);
+        if (fallback.error === null && Array.isArray(fallback.data)) {
+          result = { rows: fallback.data as unknown as ListingRow[], count: null, error: null };
+        }
+      } catch {
+        /* keep original error below */
+      }
+      if (result.error !== null) {
+        return Object.freeze({ items: Object.freeze([]), total: 0, page, pageSize, error: result.error });
+      }
     }
 
-    const { data, count, error } = await builder;
-    if (error !== null) {
-      return Object.freeze({ items: Object.freeze([]), total: 0, page, pageSize, error: error.message });
+    // Hydrate creator info from profiles with a SEPARATE plain query.
+    const ownerIds: string[] = Array.from(
+      new Set(result.rows.map((row: ListingRow): string => row.owner_id ?? "").filter((id: string): boolean => id.length > 0)),
+    );
+    if (ownerIds.length > 0) {
+      try {
+        const profRes = await sb.from("profiles").select("*").in("id", ownerIds).limit(100);
+        if (profRes.error === null && Array.isArray(profRes.data)) {
+          const byId = new Map<string, ProfileLite>();
+          for (const p of profRes.data as ReadonlyArray<ProfileLite>) {
+            if (typeof p.id === "string") byId.set(p.id, p);
+          }
+          result = { ...result, rows: result.rows.map((row: ListingRow): ListingRow => ({ ...row, profiles: byId.get(row.owner_id ?? "") ?? null })) };
+        }
+      } catch {
+        /* decorative only — cards fall back to "Hustler" */
+      }
     }
-    const rows: ReadonlyArray<ListingRow> = Array.isArray(data) ? (data as unknown as ListingRow[]) : [];
+
+    const rows: ReadonlyArray<ListingRow> = result.rows;
     const cards: HustleCardData[] = [];
     for (const row of rows) {
       const card: HustleCardData | null = rowToCard(row);
@@ -315,7 +379,7 @@ export async function fetchHustleFeed(query: FeedQuery = {}): Promise<FeedPage> 
     }
     return Object.freeze({
       items: Object.freeze(cards),
-      total: typeof count === "number" ? count : cards.length,
+      total: typeof result.count === "number" ? result.count : cards.length,
       page,
       pageSize,
       error: null,
