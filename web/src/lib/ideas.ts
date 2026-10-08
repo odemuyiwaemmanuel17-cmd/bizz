@@ -286,8 +286,12 @@ export function isDraftValid(draft: ListingDraft): boolean {
 
 interface IdeaRow {
   readonly id: string;
-  readonly owner_id?: string | null;
+  /** Ownership source of truth on the live table (creator's auth uid). */
   readonly user_id?: string | null;
+  /** @deprecated Legacy pre-drift column (NULL on real rows). Never used for
+   * ownership resolution anymore — kept in the type only to document that it
+   * may appear in raw `select('*')` payloads. */
+  readonly owner_id?: never;
   readonly title: string | null;
   readonly pitch?: string | null;
   readonly description?: string | null;
@@ -340,6 +344,11 @@ export interface ValidationIdea {
   readonly targetPriceCents: number;
   readonly imageUrl: string | null;
   readonly createdAt: string;
+  /**
+   * Display-only field: the creator's auth user id, resolved from the DB row's
+   * `user_id` column (ownership source of truth). Components must never use it
+   * for filtering/ownership — compare against the session user via user_id.
+   */
   readonly ownerId: string;
   readonly creatorName: string;
   readonly tally: SentimentTally;
@@ -379,7 +388,7 @@ function rowToIdea(row: IdeaRow): ValidationIdea | null {
       : 0,
     imageUrl: typeof row.image_url === "string" ? row.image_url : null,
     createdAt: typeof row.created_at === "string" ? row.created_at : new Date(0).toISOString(),
-    ownerId: row.user_id ?? row.owner_id ?? "unknown",
+    ownerId: row.user_id ?? "unknown",
     creatorName: creatorName.length > 0 ? creatorName : "Anonymous hustler",
     tally,
     validated: isValidated(tally),
@@ -483,8 +492,8 @@ export async function fetchIdeas(limit: number = 24): Promise<IdeaPage> {
   if (sb === null) return offlineIdeaPage();
   const capped: number = Math.min(50, Math.max(1, Math.trunc(limit)));
   /*
-   * Live `public.ideas` schema variants drift across deployments (owner_id vs
-   * user_id, pitch vs description, presence of status/category/image columns).
+   * Live `public.ideas` schema variants drift across deployments (pitch vs
+   * description, presence of status/category/image columns).
    * Use plain select("*") — never embedded joins or explicit column lists —
    * so PostgREST can't throw schema-cache errors; missing fields are mapped
    * to safe defaults below.
@@ -692,7 +701,7 @@ export async function publishListing(draft: ListingDraft): Promise<PublishResult
    * Resolve the acting user with a SERVER-side verification.
    * `getSessionSafe()` reads the client's local storage token, which can be
    * stale/expired — inserting with that id then trips RLS policies such as
-   * `with check (owner_id = auth.uid())`. `getUser()` hits the auth server,
+   * `with check (user_id = auth.uid())`. `getUser()` hits the auth server,
    * refreshes the token, and returns the authoritative uid used by RLS.
    */
   let userId: string | null = null;
@@ -708,8 +717,8 @@ export async function publishListing(draft: ListingDraft): Promise<PublishResult
   if (userId === null) return fail("not-authenticated", "Sign in before posting a bizz.");
 
   /*
-   * Guarantee the profiles row exists BEFORE any insert: listings.owner_id
-   * and ideas.owner_id carry FKs to public.profiles(id), so a missing row
+   * Guarantee the profiles row exists BEFORE any insert: listings.user_id
+   * and ideas.user_id carry FKs to public.profiles(id), so a missing row
    * surfaces as a confusing foreign key violation at publish time. The
    * upsert is best-effort (a DB trigger may have already created it).
    */
@@ -780,6 +789,12 @@ export async function publishListing(draft: ListingDraft): Promise<PublishResult
       status: "active",
     } as const;
 
+    /*
+     * AUDIT NOTE (2nd pass): every attempt below keys ownership ONLY on
+     * `user_id`. The former last-resort shape that set `owner_id` was removed:
+     * the live RLS insert policy checks `auth.uid() = user_id`, so an
+     * owner_id-only payload could never pass anyway.
+     */
     const attempts: ReadonlyArray<ListingPayload> = Object.freeze([
       // Primary — current live schema: explicit user_id + description + price_cents.
       { ...baseFields, user_id: userId, description: trimmedPitch, price_cents: draft.priceCents },
@@ -787,9 +802,6 @@ export async function publishListing(draft: ListingDraft): Promise<PublishResult
       { ...baseFields, user_id: userId, blurb: trimmedPitch, price_cents: draft.priceCents },
       // Variant — price stored in major units (`price` numeric).
       { ...baseFields, user_id: userId, description: trimmedPitch, price: draft.priceCents / 100 },
-      // Last resort — original pre-drift schema keyed by owner_id, kept only
-      // for backwards compatibility with old databases.
-      { ...baseFields, owner_id: userId, description: trimmedPitch, price_cents: draft.priceCents },
     ]);
 
     let lastError: string | null = null;
@@ -808,7 +820,7 @@ export async function publishListing(draft: ListingDraft): Promise<PublishResult
     return fail(
       "database",
       `Could not publish the listing: ${lastError ?? "insert failed"}. ` +
-        `The 'listings' table must have an owner column (user_id or owner_id) whose RLS insert policy checks it against auth.uid().`,
+        `The 'listings' table must expose a user_id column whose RLS insert policy checks it against auth.uid().`,
     );
   } catch (err: unknown) {
     const message: string = err instanceof Error ? err.message : "Publish failed";

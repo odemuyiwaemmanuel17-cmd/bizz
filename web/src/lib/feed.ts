@@ -153,7 +153,6 @@ interface ListingRow {
   readonly category: string | null;
   readonly price_cents: number | null;
   readonly created_at: string | null;
-  readonly owner_id: string | null;
   readonly user_id?: string | null;
   readonly profiles?: ProfileLite | null;
   readonly votes_count?: number | null;
@@ -174,7 +173,7 @@ function rowToCard(row: ListingRow): HustleCardData | null {
   if (title.length === 0) return null; // defensive: skip malformed rows
   const profile = row.profiles ?? null;
   const creator: CreatorInfo = Object.freeze({
-    id: profile?.id ?? row.user_id ?? row.owner_id ?? "unknown",
+    id: profile?.id ?? row.user_id ?? "unknown",
     displayName:
       profile?.display_name ?? profile?.full_name ?? profile?.handle
       ?? (typeof profile?.email === "string" && profile.email.length > 0 ? profile.email.split("@")[0] ?? "Hustler" : "Hustler"),
@@ -353,10 +352,11 @@ export async function fetchHustleFeed(query: FeedQuery = {}): Promise<FeedPage> 
     }
 
     // Hydrate creator info from profiles with a SEPARATE plain query.
-    // Ownership source of truth is `user_id` (live rows have owner_id NULL),
-    // so resolve each row's creator as user_id ?? owner_id.
+    // Ownership source of truth is `user_id` ONLY (2nd-pass audit: legacy
+    // owner_id fallback removed — live rows store the creator there and RLS
+    // checks auth.uid() = user_id).
     const ownerIds: string[] = Array.from(
-      new Set(result.rows.map((row: ListingRow): string => row.user_id ?? row.owner_id ?? "").filter((id: string): boolean => id.length > 0)),
+      new Set(result.rows.map((row: ListingRow): string => row.user_id ?? "").filter((id: string): boolean => id.length > 0)),
     );
     if (ownerIds.length > 0) {
       try {
@@ -370,7 +370,7 @@ export async function fetchHustleFeed(query: FeedQuery = {}): Promise<FeedPage> 
             ...result,
             rows: result.rows.map((row: ListingRow): ListingRow => ({
               ...row,
-              profiles: byId.get(row.user_id ?? row.owner_id ?? "") ?? null,
+              profiles: byId.get(row.user_id ?? "") ?? null,
             })),
           };
         }

@@ -89,27 +89,31 @@ const EMPTY_STATS: DashboardStats = Object.freeze({
   totalVotesReceived: 0,
 });
 
-/** Small helper: run a plain (non-embedded) select filtered by the owner column. */
+/**
+ * Plain (non-embedded) select filtered by the ownership source of truth.
+ * 2nd-pass audit: filters ONLY on `user_id` — the ownerColumns indirection
+ * that previously allowed legacy `owner_id` fallbacks was removed.
+ */
 async function selectOwnedRows<Row>(
   sb: SupabaseClient,
   table: string,
   columns: string,
-  ownerColumns: ReadonlyArray<string>,
   userId: string,
 ): Promise<{ readonly rows: ReadonlyArray<Row>; readonly error: string | null }> {
-  let lastError: string | null = null;
-  for (const col of ownerColumns) {
-    try {
-      const res = await sb.from(table).select(columns).eq(col, userId).order("created_at", { ascending: false }).limit(100);
-      if (res.error === null) {
-        return { rows: Array.isArray(res.data) ? (res.data as unknown as Row[]) : [], error: null };
-      }
-      lastError = res.error.message;
-    } catch (err: unknown) {
-      lastError = err instanceof Error ? err.message : "Query failed";
+  try {
+    const res = await sb
+      .from(table)
+      .select(columns)
+      .eq(OWNER_COLUMN, userId)
+      .order("created_at", { ascending: false })
+      .limit(100);
+    if (res.error === null) {
+      return { rows: Array.isArray(res.data) ? (res.data as unknown as Row[]) : [], error: null };
     }
+    return { rows: [], error: res.error.message };
+  } catch (err: unknown) {
+    return { rows: [], error: err instanceof Error ? err.message : "Query failed" };
   }
-  return { rows: [], error: lastError ?? "Query failed" };
 }
 
 /** Fetches the current user's listings + ideas and derives dashboard stats. */
@@ -126,10 +130,10 @@ export async function fetchCreatorDashboard(userId: string): Promise<DashboardRe
     // truth (`user_id`). Plain columns with tolerant fallbacks (e.g. `price`
     // in dollars when `price_cents` is absent); never embedded joins/aliases.
     const listingCols = "id, title, description, blurb, category, price_cents, price, image_url, status, created_at, user_id";
-    const listingsQ = await selectOwnedRows<ListingRow>(sb, "listings", listingCols, [OWNER_COLUMN], userId);
+    const listingsQ = await selectOwnedRows<ListingRow>(sb, "listings", listingCols, userId);
     // Query 2: the user's own concepts (`select('*')` so we never reference a
     // column that might not exist on the live table).
-    const conceptsQ = await selectOwnedRows<IdeaRow>(sb, "ideas", "*", [OWNER_COLUMN], userId);
+    const conceptsQ = await selectOwnedRows<IdeaRow>(sb, "ideas", "*", userId);
 
     if (listingsQ.error !== null && listingsQ.rows.length === 0) {
       return { ok: false, message: `Could not load your bizzes: ${listingsQ.error}` };

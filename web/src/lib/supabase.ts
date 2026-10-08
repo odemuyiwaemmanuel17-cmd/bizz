@@ -105,8 +105,7 @@ export async function signInWithMagicLink(
 
 /**
  * Upserts a `public.profiles` row for the given user so the row ALWAYS exists
- * before any listing/idea insert is attempted (listings.owner_id /
- * listings.user_id carry a FK to profiles.id — missing rows cause foreign
+ * before any listing/idea insert is attempted (listings.user_id carries a FK to profiles.id — missing rows cause foreign
  * key violations). Best-effort by design: failures are logged and resolved
  * silently because a DB-side trigger/backfill may already have created the
  * row, and we never want profile bookkeeping to block sign-in.
