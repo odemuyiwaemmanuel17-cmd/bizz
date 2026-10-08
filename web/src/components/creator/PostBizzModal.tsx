@@ -157,8 +157,10 @@ export default function PostBizzModal({ open, onClose }: PostBizzModalProps): Re
                 type="button"
                 onClick={() => {
                   handleClose();
-                  const el: HTMLElement | null = document.getElementById("dashboard");
-                  if (el !== null) el.scrollIntoView({ behavior: "smooth", block: "start" });
+                  // Multi-page app: take the creator to their isolated
+                  // dashboard route (the event bus already refetched it).
+                  window.history.pushState({}, "", "/dashboard");
+                  window.dispatchEvent(new PopStateEvent("popstate"));
                 }}
                 className="btn-primary"
               >

@@ -74,12 +74,13 @@ interface IdeaVoteRow {
 }
 
 /**
- * Owner columns present on the live `ideas` table differ across deployments
- * (schema drift). We filter with explicit `.eq()` calls per candidate column
- * and keep whichever query returns rows — no embedded joins involved.
+ * OWNERSHIP SOURCE OF TRUTH: `listings.user_id` / `ideas.user_id`.
+ * The live database stores the creator's Supabase auth uid in `user_id`
+ * (`owner_id` is NULL on real rows), and every RLS policy checks
+ * `auth.uid() = user_id`. Frontend ownership logic therefore filters ONLY by
+ * `user_id` — never owner_id/creator_id/email/username.
  */
-const IDEA_OWNER_COLUMNS: ReadonlyArray<string> = ["owner_id", "user_id"];
-const LISTING_OWNER_COLUMNS: ReadonlyArray<string> = ["owner_id", "user_id"];
+const OWNER_COLUMN: string = "user_id";
 
 const EMPTY_STATS: DashboardStats = Object.freeze({
   listingsPosted: 0,
@@ -88,7 +89,7 @@ const EMPTY_STATS: DashboardStats = Object.freeze({
   totalVotesReceived: 0,
 });
 
-/** Small helper: run a plain (non-embedded) select filtered by an owner column. */
+/** Small helper: run a plain (non-embedded) select filtered by the owner column. */
 async function selectOwnedRows<Row>(
   sb: SupabaseClient,
   table: string,
@@ -121,14 +122,14 @@ export async function fetchCreatorDashboard(userId: string): Promise<DashboardRe
   try {
     // Two clean, separate queries — NO embedded joins like `idea_votes(choice)`
     // or `votes_count`, which PostgREST rejects when FK metadata is missing.
-    // Query 1: the user's own listings. Plain columns with tolerant fallbacks
-    // (e.g. `price` in dollars when `price_cents` is absent on this variant),
-    // filtered by owner_id OR user_id — never embedded joins or count aliases.
-    const listingCols = "id, title, description, blurb, category, price_cents, price, image_url, status, created_at, owner_id, user_id";
-    const listingsQ = await selectOwnedRows<ListingRow>(sb, "listings", listingCols, LISTING_OWNER_COLUMNS, userId);
+    // Query 1: the user's own listings, filtered by the ownership source of
+    // truth (`user_id`). Plain columns with tolerant fallbacks (e.g. `price`
+    // in dollars when `price_cents` is absent); never embedded joins/aliases.
+    const listingCols = "id, title, description, blurb, category, price_cents, price, image_url, status, created_at, user_id";
+    const listingsQ = await selectOwnedRows<ListingRow>(sb, "listings", listingCols, [OWNER_COLUMN], userId);
     // Query 2: the user's own concepts (`select('*')` so we never reference a
     // column that might not exist on the live table).
-    const conceptsQ = await selectOwnedRows<IdeaRow>(sb, "ideas", "*", IDEA_OWNER_COLUMNS, userId);
+    const conceptsQ = await selectOwnedRows<IdeaRow>(sb, "ideas", "*", [OWNER_COLUMN], userId);
 
     if (listingsQ.error !== null && listingsQ.rows.length === 0) {
       return { ok: false, message: `Could not load your bizzes: ${listingsQ.error}` };

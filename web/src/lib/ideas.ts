@@ -379,7 +379,7 @@ function rowToIdea(row: IdeaRow): ValidationIdea | null {
       : 0,
     imageUrl: typeof row.image_url === "string" ? row.image_url : null,
     createdAt: typeof row.created_at === "string" ? row.created_at : new Date(0).toISOString(),
-    ownerId: row.owner_id ?? row.user_id ?? "unknown",
+    ownerId: row.user_id ?? row.owner_id ?? "unknown",
     creatorName: creatorName.length > 0 ? creatorName : "Anonymous hustler",
     tally,
     validated: isValidated(tally),
@@ -752,13 +752,12 @@ export async function publishListing(draft: ListingDraft): Promise<PublishResult
     }
 
     /*
-     * Build the row payload. The live Supabase database may store the creator
-     * id under either `owner_id` (original schema) or `user_id` (current
-     * schema), and the price/contact columns have drifted too. Rather than
-     * hard-coding one shape, we try compatible payloads in order until the
-     * insert passes both the PostgREST schema cache and the RLS check
-     * (`<owner column> = auth.uid()`). Each attempt explicitly includes the
-     * verified logged-in user id — never relying on implicit defaults.
+     * Build the row payload. OWNERSHIP SOURCE OF TRUTH: `listings.user_id`
+     * (the live table stores the creator's auth uid there; owner_id is NULL
+     * on real rows, and RLS checks `auth.uid() = user_id`). The primary
+     * insert therefore sets `user_id` explicitly — never relying on implicit
+     * defaults. Legacy column-name variants are tried afterwards ONLY if the
+     * primary shape is rejected by the schema cache.
      */
     const trimmedTitle: string = draft.title.trim();
     const trimmedPitch: string = draft.blurb.trim();
@@ -782,14 +781,15 @@ export async function publishListing(draft: ListingDraft): Promise<PublishResult
     } as const;
 
     const attempts: ReadonlyArray<ListingPayload> = Object.freeze([
-      // Shape A — original schema: owner_id + description + price_cents.
-      { ...baseFields, owner_id: userId, description: trimmedPitch, price_cents: draft.priceCents },
-      // Shape B — current schema: explicit user_id (RLS: user_id = auth.uid()).
+      // Primary — current live schema: explicit user_id + description + price_cents.
       { ...baseFields, user_id: userId, description: trimmedPitch, price_cents: draft.priceCents },
-      // Shape C — variant with legacy `blurb` column name.
+      // Variant — legacy `blurb` column name instead of `description`.
       { ...baseFields, user_id: userId, blurb: trimmedPitch, price_cents: draft.priceCents },
-      // Shape D — variant where price is stored in major units.
+      // Variant — price stored in major units (`price` numeric).
       { ...baseFields, user_id: userId, description: trimmedPitch, price: draft.priceCents / 100 },
+      // Last resort — original pre-drift schema keyed by owner_id, kept only
+      // for backwards compatibility with old databases.
+      { ...baseFields, owner_id: userId, description: trimmedPitch, price_cents: draft.priceCents },
     ]);
 
     let lastError: string | null = null;

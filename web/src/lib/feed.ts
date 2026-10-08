@@ -174,7 +174,7 @@ function rowToCard(row: ListingRow): HustleCardData | null {
   if (title.length === 0) return null; // defensive: skip malformed rows
   const profile = row.profiles ?? null;
   const creator: CreatorInfo = Object.freeze({
-    id: profile?.id ?? row.owner_id ?? row.user_id ?? "unknown",
+    id: profile?.id ?? row.user_id ?? row.owner_id ?? "unknown",
     displayName:
       profile?.display_name ?? profile?.full_name ?? profile?.handle
       ?? (typeof profile?.email === "string" && profile.email.length > 0 ? profile.email.split("@")[0] ?? "Hustler" : "Hustler"),
@@ -353,8 +353,10 @@ export async function fetchHustleFeed(query: FeedQuery = {}): Promise<FeedPage> 
     }
 
     // Hydrate creator info from profiles with a SEPARATE plain query.
+    // Ownership source of truth is `user_id` (live rows have owner_id NULL),
+    // so resolve each row's creator as user_id ?? owner_id.
     const ownerIds: string[] = Array.from(
-      new Set(result.rows.map((row: ListingRow): string => row.owner_id ?? "").filter((id: string): boolean => id.length > 0)),
+      new Set(result.rows.map((row: ListingRow): string => row.user_id ?? row.owner_id ?? "").filter((id: string): boolean => id.length > 0)),
     );
     if (ownerIds.length > 0) {
       try {
@@ -364,7 +366,13 @@ export async function fetchHustleFeed(query: FeedQuery = {}): Promise<FeedPage> 
           for (const p of profRes.data as ReadonlyArray<ProfileLite>) {
             if (typeof p.id === "string") byId.set(p.id, p);
           }
-          result = { ...result, rows: result.rows.map((row: ListingRow): ListingRow => ({ ...row, profiles: byId.get(row.owner_id ?? "") ?? null })) };
+          result = {
+            ...result,
+            rows: result.rows.map((row: ListingRow): ListingRow => ({
+              ...row,
+              profiles: byId.get(row.user_id ?? row.owner_id ?? "") ?? null,
+            })),
+          };
         }
       } catch {
         /* decorative only — cards fall back to "Hustler" */

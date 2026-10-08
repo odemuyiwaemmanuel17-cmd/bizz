@@ -1,5 +1,6 @@
 /** React hook: loads the signed-in creator's dashboard data. */
 import { useCallback, useEffect, useState } from "react";
+import { subscribeToBizzEvents } from "../lib/events";
 import { useAuth } from "./useAuth";
 import {
   fetchCreatorDashboard,
@@ -60,6 +61,11 @@ export function useCreatorDashboard(): UseCreatorDashboardResult {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Post → dashboard sync: refetch immediately when a bizz/idea is published,
+  // edited or deleted (event bus fired by the wizard), so new posts appear
+  // without any manual page refresh.
+  useEffect(() => subscribeToBizzEvents(() => void load()), [load]);
 
   return {
     isAuthenticated: auth.isAuthenticated && userId !== null,

@@ -242,3 +242,37 @@ create policy "own profile save" on public.profiles for update using (id = auth.
 
 -- Reload PostgREST schema cache so new columns are visible immediately.
 notify pgrst, 'reload schema';
+
+-- =====================================================================
+-- OWNERSHIP SOURCE OF TRUTH: listings.user_id (Step-2 standardization).
+-- The live table stores the creator's auth uid in user_id; owner_id is
+-- NULL on real rows. This migration guarantees user_id exists, backfills
+-- it from legacy owner_id rows, makes it NOT NULL, and rewrites ALL RLS
+-- policies to check auth.uid() = user_id for insert/update/delete.
+-- Idempotent — safe to run repeatedly.
+-- =====================================================================
+
+alter table public.listings add column if not exists user_id uuid references public.profiles(id) on delete cascade;
+
+-- Backfill: any row that only had owner_id gets user_id copied over.
+update public.listings set user_id = owner_id where user_id is null and owner_id is not null;
+
+-- Any still-orphaned rows (no owner at all) are archived so they stop
+-- appearing as unclaimable ghosts in the feed.
+update public.listings set status = 'archived' where user_id is null;
+
+alter table public.listings alter column user_id set not null;
+
+drop policy if exists "active listings public" on public.listings;
+create policy "active listings public" on public.listings for select using (status = 'active');
+
+drop policy if exists "owner manages listings" on public.listings;
+create policy "owner manages listings" on public.listings for update using (user_id = auth.uid()) with check (user_id = auth.uid());
+
+drop policy if exists "owner creates listings" on public.listings;
+create policy "owner creates listings" on public.listings for insert with check (user_id = auth.uid());
+
+drop policy if exists "owner deletes listings" on public.listings;
+create policy "owner deletes listings" on public.listings for delete using (user_id = auth.uid());
+
+notify pgrst, 'reload schema';

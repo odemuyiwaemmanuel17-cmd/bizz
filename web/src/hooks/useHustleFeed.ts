@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { subscribeToBizzEvents } from "../lib/events";
 import {
   DEFAULT_PAGE_SIZE,
   fetchHustleFeed,
@@ -79,6 +80,11 @@ export function useHustleFeed(initialCategory: FeedCategory = "all"): UseHustleF
   useEffect(() => {
     load();
   }, [load]);
+
+  // Cross-component sync: refetch when a bizz/idea is published, edited or
+  // deleted anywhere in the app (e.g. the Post-a-Bizz modal), so newly
+  // created listings appear on the marketplace without a manual refresh.
+  useEffect(() => subscribeToBizzEvents(() => load()), [load]);
 
   const setSearch = useCallback((next: string): void => {
     setSearchState(next);

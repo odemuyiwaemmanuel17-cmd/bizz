@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { subscribeToBizzEvents } from "../lib/events";
 import {
   fetchIdeas,
   fetchMyIdeaVote,
@@ -61,9 +62,14 @@ export function useIdeas(): UseIdeasResult {
     const unsubscribe: () => void = subscribeToIdeaVotes(() => {
       void fetchIdeas().then((result: IdeaPage) => setPage(result));
     });
+    // Refetch when a new concept is published through the Post-a-Bizz wizard.
+    const unsubscribeBizz: () => void = subscribeToBizzEvents(() => {
+      void load();
+    });
     return (): void => {
       cancelLoad();
       unsubscribe();
+      unsubscribeBizz();
     };
   }, [load]);
 

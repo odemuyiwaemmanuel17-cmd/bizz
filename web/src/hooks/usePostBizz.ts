@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { emitBizzEvent } from "../lib/events";
 import {
   EMPTY_DRAFT,
   FORM_STEPS,
@@ -153,6 +154,10 @@ export function usePostBizz(): UsePostBizzResult {
       if (generationRef.current !== generation) return;
       if (result.ok) {
         setPublished(result.value);
+        // Post → dashboard/marketplace sync: tell every mounted data hook the
+        // cache is stale so the new bizz appears immediately (no manual
+        // refresh needed). BroadcastChannel also covers other open tabs.
+        emitBizzEvent({ kind: "published", id: result.value.id, isConcept: result.value.isConcept });
       } else {
         setSubmitError(result.message);
       }
