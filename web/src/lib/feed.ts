@@ -250,21 +250,6 @@ function seedCards(): ReadonlyArray<HustleCardData> {
 /* Public API                                                          */
 /* ------------------------------------------------------------------ */
 
-function countFor(card: HustleCardData, sb: SupabaseClient | null): Promise<number> {
-  if (sb === null) return Promise.resolve(card.votesCount);
-  return (async (): Promise<number> => {
-    try {
-      const { count, error } = await sb
-        .from("votes")
-        .select("listing_id", { count: "exact", head: true })
-        .eq("listing_id", card.id);
-      return error === null ? count ?? 0 : card.votesCount;
-    } catch {
-      return card.votesCount;
-    }
-  })();
-}
-
 /**
  * One page of active hustle cards, newest first, optionally filtered by tab.
  * Never rejects — failures surface via `FeedPage.error`.
@@ -398,28 +383,17 @@ export async function fetchHustleFeed(query: FeedQuery = {}): Promise<FeedPage> 
   }
 }
 
-/** Vote counts for a batch of listing ids (used to hydrate cards after fetch). */
-export async function voteCountsFor(ids: ReadonlyArray<string>): Promise<ReadonlyMap<string, number>> {
-  const result: Map<string, number> = new Map<string, number>();
-  if (ids.length === 0) return result;
-  const sb: SupabaseClient | null = getSupabase();
-  if (sb === null) {
-    for (const card of seedCards()) {
-      if (ids.includes(card.id)) result.set(card.id, card.votesCount);
-    }
-    return result;
-  }
-  try {
-    const { data, error } = await sb.from("votes").select("listing_id").in("listing_id", ids as unknown as string[]);
-    if (error !== null || !Array.isArray(data)) return result;
-    for (const row of data as ReadonlyArray<{ readonly listing_id?: unknown }>) {
-      const listingId: string = String(row.listing_id ?? "");
-      if (listingId.length > 0) result.set(listingId, (result.get(listingId) ?? 0) + 1);
-    }
-  } catch {
-    // Tally is decorative — swallow and return what we have.
-  }
-  return result;
+/**
+ * Vote counts for a batch of listing ids. AUDIT: the legacy `votes` table was
+ * standardized onto idea voting (columns: id, idea_id, user_id, vote_type)
+ * and no longer carries `listing_id`, so marketplace listings have NO real
+ * vote source yet. We deliberately return an empty map (honest zeros) instead
+ * of querying a table that would error or faking listing votes with idea
+ * infrastructure. Wire this back once a proper marketplace-votes schema
+ * exists.
+ */
+export async function voteCountsFor(_ids: ReadonlyArray<string>): Promise<ReadonlyMap<string, number>> {
+  return new Map<string, number>();
 }
 
 /** Attach live vote tallies to already-fetched cards (best effort). */
@@ -433,4 +407,3 @@ export async function hydrateVotes(items: ReadonlyArray<HustleCardData>): Promis
   );
 }
 
-void countFor; // reserved for future per-card refresh; keeps tree-shaking honest

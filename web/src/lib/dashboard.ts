@@ -144,32 +144,12 @@ export async function fetchCreatorDashboard(userId: string): Promise<DashboardRe
 
     const listingRows: ReadonlyArray<ListingRow> = listingsQ.rows;
 
-    // Derive per-listing vote counts from the `votes` table instead of a
-    // `listings.votes_count` column, which does not exist in our schema.
-    // Runs best-effort: if the votes query fails we degrade to 0 rather than
-    // breaking the whole dashboard.
-    let votesByListing: Map<string, number> = new Map();
-    if (listingRows.length > 0) {
-      try {
-        const votesRes = await sb
-          .from("votes")
-          .select("listing_id")
-          .in("listing_id", listingRows.map((row: ListingRow): string => row.id))
-          .limit(5000);
-        if (votesRes.error === null && Array.isArray(votesRes.data)) {
-          const counts = new Map<string, number>();
-          for (const v of votesRes.data as Array<{ readonly listing_id?: string | null }>) {
-            const lid: string | undefined = v.listing_id ?? undefined;
-            if (typeof lid === "string" && lid.length > 0) {
-              counts.set(lid, (counts.get(lid) ?? 0) + 1);
-            }
-          }
-          votesByListing = counts;
-        }
-      } catch {
-        // Best effort only — leave counts at zero.
-      }
-    }
+    // AUDIT NOTE: the legacy `votes` table (listing_id-based) is NOT queried
+    // anymore — it has no rows for our listings and its schema drifted to
+    // idea_id. Listing vote counts stay 0 until a proper marketplace-votes
+    // schema lands (deliberate honest zero, not fake data). Bizz/Fizz idea
+    // validation counts come exclusively from `idea_votes` below.
+    const votesByListing: Map<string, number> = new Map();
 
     const listings: ReadonlyArray<DashboardListing> = Object.freeze(
       listingRows.map((row: ListingRow): DashboardListing => ({

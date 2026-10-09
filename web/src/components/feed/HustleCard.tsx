@@ -1,6 +1,5 @@
-import { useCallback, useEffect, useState, type ReactElement } from "react";
+import { type ReactElement } from "react";
 import { formatPrice, type HustleCardData } from "../../lib/feed";
-import { fetchVoteState, seedOfflineVotes, submitVote, type VoteState } from "../../lib/votes";
 import CategoryBadge from "./CategoryBadge";
 import CreatorChip from "./CreatorChip";
 import ChatWithCreator from "./ChatWithCreator";
@@ -16,46 +15,17 @@ const STOCK_LABELS: Readonly<Record<string, string>> = Object.freeze({
   digital: "Instant digital delivery",
 });
 
-/** Modular discovery card: title, price tag, category badge, creator + CTA. */
+/**
+ * Marketplace listing card. NOTE: the 👍 "validation vote" affordance was
+ * removed because the live `votes` table now carries an `idea_id` column and
+ * no `listing_id` — writing to it with a listing id fails (and would fake
+ * marketplace votes using idea infrastructure). Bizz/Fizz voting lives
+ * exclusively in the Validation Arena against `idea_votes`. Listing vote
+ * counts render as honest zeros until a proper marketplace-votes schema
+ * exists.
+ */
 export default function HustleCard({ card }: HustleCardProps): ReactElement {
-  const [vote, setVote] = useState<VoteState>({ voted: false, votesCount: card.votesCount });
-  const [pending, setPending] = useState<boolean>(false);
-  const [notice, setNotice] = useState<string | null>(null);
-
-  useEffect(() => {
-    // Seed the offline demo tally and hydrate the caller's own vote state.
-    seedOfflineVotes(card.id, card.votesCount);
-    let cancelled: boolean = false;
-    void fetchVoteState(card.id, card.votesCount).then((state: VoteState) => {
-      if (!cancelled) setVote(state);
-    });
-    return (): void => {
-      cancelled = true;
-    };
-  }, [card.id, card.votesCount]);
-
-  const toggleVote = useCallback(async (): Promise<void> => {
-    if (pending) return;
-    setPending(true);
-    setNotice(null);
-    // Optimistic flip; reconciled with the authoritative result below.
-    setVote((prev: VoteState) => ({
-      voted: !prev.voted,
-      votesCount: Math.max(0, prev.votesCount + (prev.voted ? -1 : 1)),
-    }));
-    const result = await submitVote(card.id, card.votesCount);
-    if (result.ok) {
-      setVote(result.state);
-    } else {
-      setVote((prev: VoteState) => ({ voted: !prev.voted, votesCount: Math.max(0, prev.votesCount + (prev.voted ? 1 : -1)) }));
-      setNotice(
-        result.error === "not-authenticated"
-          ? "Sign in to cast a validation vote."
-          : "Couldn't reach the vote ledger — try again.",
-      );
-    }
-    setPending(false);
-  }, [card.id, card.votesCount, pending]);
+  const votesCount: number = Number.isFinite(card.votesCount) ? Math.max(0, Math.trunc(card.votesCount)) : 0;
 
   return (
     <article className="glass group flex h-full flex-col gap-4 rounded-3xl p-6 transition-all duration-300 hover:-translate-y-1 hover:border-white/20 hover:shadow-xl hover:shadow-indigoGlow/5">
@@ -75,24 +45,15 @@ export default function HustleCard({ card }: HustleCardProps): ReactElement {
       <div className="mt-auto flex flex-col gap-3">
         <div className="flex items-center justify-between">
           <CreatorChip creator={card.creator} />
-          <button
-            type="button"
-            onClick={() => void toggleVote()}
-            disabled={pending}
-            aria-pressed={vote.voted}
-            aria-label={`Validate ${card.title} (${vote.votesCount} votes)`}
-            title="I would buy this — validation vote"
-            className={`flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
-              vote.voted
-                ? "border-cyanGlow/50 bg-cyanGlow/15 text-cyanGlow"
-                : "border-white/10 bg-white/5 text-slate-300 hover:border-cyanGlow/40 hover:text-cyanGlow"
-            } ${pending ? "opacity-60" : ""}`}
+          <span
+            aria-label={`Validation interest: ${votesCount.toLocaleString("en-US")} (marketplace voting coming soon)`}
+            title="Marketplace validation voting is coming soon"
+            className="flex shrink-0 items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-semibold text-slate-400"
           >
-            <span aria-hidden="true">{vote.voted ? "\u2713" : "\uD83D\uDC4D"}</span>
-            {vote.votesCount.toLocaleString("en-US")}
-          </button>
+            <span aria-hidden="true">👍</span>
+            {votesCount.toLocaleString("en-US")}
+          </span>
         </div>
-        {notice !== null && <p role="status" className="text-[11px] text-amber-300">{notice}</p>}
         <ChatWithCreator listingTitle={card.title} channel={card.contactChannel} handle={card.contactHandle} />
       </div>
     </article>

@@ -683,6 +683,51 @@ interface InsertedRow {
  * Requires authentication when Supabase is configured; in offline demo mode
  * it mints a local id so the wizard flow can be exercised end-to-end.
  */
+/**
+ * Publish a community-validation concept into `public.ideas`.
+ *
+ * CONFIRMED live schema of public.ideas is EXACTLY:
+ *   id, user_id, title, description, created_at, category
+ * The payload is therefore built explicitly — never by spreading generic
+ * form/draft state — so columns that do NOT exist (status, image_url,
+ * votes_count, owner_id, creator_id, price, contact_link, blurb, pitch,
+ * thumbnail) can never leak into the insert. The UI's `blurb` field maps to
+ * the DB `description` column here.
+ */
+export async function publishIdea(
+  sb: SupabaseClient,
+  userId: string,
+  draft: ListingDraft,
+): Promise<PublishResult<PublishedListing>> {
+  const title: string = draft.title.trim();
+  const description: string = draft.blurb.trim();
+
+  // Exact four-column payload per the confirmed schema contract.
+  const payload: { readonly user_id: string; readonly title: string; readonly description: string; readonly category: string } = {
+    user_id: userId,
+    title,
+    description,
+    category: draft.category,
+  };
+
+  try {
+    const { data, error } = await sb.from("ideas").insert(payload).select("id").single();
+    if (error !== null) {
+      console.error("[publishIdea] Supabase insert failed:", error);
+      return fail("database", `Could not save the idea: ${error.message}`);
+    }
+    if (data === null || data === undefined) {
+      return fail("database", "Could not save the idea: insert returned no row.");
+    }
+    const row: InsertedRow = data as unknown as InsertedRow;
+    return succeed({ id: row.id, title, isConcept: true, imageUrl: null });
+  } catch (err: unknown) {
+    const message: string = err instanceof Error ? err.message : "Unknown ideas error";
+    console.error("[publishIdea] unexpected failure:", err);
+    return fail("network", message);
+  }
+}
+
 export async function publishListing(draft: ListingDraft): Promise<PublishResult<PublishedListing>> {
   const errors: DraftErrors = validateDraft(draft);
   if (Object.keys(errors).length > 0) {
@@ -717,10 +762,23 @@ export async function publishListing(draft: ListingDraft): Promise<PublishResult
   if (userId === null) return fail("not-authenticated", "Sign in before posting a bizz.");
 
   /*
-   * Guarantee the profiles row exists BEFORE any insert: listings.user_id
-   * and ideas.user_id carry FKs to public.profiles(id), so a missing row
-   * surfaces as a confusing foreign key violation at publish time. The
-   * upsert is best-effort (a DB trigger may have already created it).
+   * BRANCHED PUBLISHING ARCHITECTURE: the two product flows are fully
+   * independent — concepts go through publishIdea() (ideas table, exact
+   * four-column payload), ready-to-sell items through the listing insert
+   * below. No database-specific fields are shared between them. The profile
+   * pre-check is skipped for ideas because the wizard's concept step has no
+   * contact fields, and an idea row must save even when the profiles write
+   * is unavailable.
+   */
+  if (draft.isConcept) {
+    return await publishIdea(sb, userId, draft);
+  }
+
+  /*
+   * Guarantee the profiles row exists BEFORE any listing insert: listings.user_id
+   * carries an FK to public.profiles(id), so a missing row surfaces as a
+   * confusing foreign key violation at publish time. The upsert is best-effort
+   * (a DB trigger may have already created it).
    */
   try {
     const { data: profileCheck, error: profileError } = await sb
@@ -737,29 +795,10 @@ export async function publishListing(draft: ListingDraft): Promise<PublishResult
   }
 
   try {
-    if (draft.isConcept) {
-      const { data, error } = await sb
-        .from("ideas")
-        .insert({
-          // Explicitly set to the verified logged-in user id so the insert
-          // satisfies the RLS policy: user_id = auth.uid(). Live `ideas`
-          // table columns verified via REST probe: id,user_id,title,
-          // description,created_at. Extra fields (category/status/image)
-          // are attempted first and stripped on schema-cache errors.
-          user_id: userId,
-          title: draft.title.trim(),
-          description: draft.blurb.trim(),
-          category: draft.category,
-          status: "open",
-          image_url: draft.imageUrl,
-        })
-        .select("id")
-        .single();
-      if (error !== null) return fail("database", `Could not save the idea: ${error.message}`);
-      const row: InsertedRow = data as unknown as InsertedRow;
-      return succeed({ id: row.id, title: draft.title.trim(), isConcept: true, imageUrl: draft.imageUrl });
-    }
-
+    /*
+     * Ready-to-sell listings insert. (Concepts already returned above via
+     * publishIdea() — the two flows share no payload fields.)
+     */
     /*
      * Build the row payload. OWNERSHIP SOURCE OF TRUTH: `listings.user_id`
      * (the live table stores the creator's auth uid there; owner_id is NULL
