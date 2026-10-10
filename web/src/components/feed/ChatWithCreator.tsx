@@ -62,7 +62,8 @@ export default function ChatWithCreator({
         type="button"
         disabled
         title="This creator has not published a contact handle yet"
-        className="w-full cursor-not-allowed rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-semibold text-slate-500"
+        // !cursor-* wins over any parent rule; select-none stops the I-beam.
+        className="!cursor-not-allowed w-full select-none rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-semibold text-slate-500"
       >
         Contact unavailable
       </button>
@@ -74,7 +75,11 @@ export default function ChatWithCreator({
       type="button"
       onClick={openChat}
       aria-label={`${meta.label}: send a pre-filled message to the creator of ${listingTitle}`}
-      className={`group relative w-full overflow-hidden rounded-xl bg-gradient-to-r px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-black/30 transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 ${meta.accent}`}
+      // The card wrapper is selectable prose (text I-beam inherits into
+      // children); force pointer on the whole clickable area and mark every
+      // descendant pointer-events:none so the BUTTON is always the hovered
+      // element under the mouse.
+      className={`!cursor-pointer group relative w-full select-none overflow-hidden rounded-xl bg-gradient-to-r px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-black/30 transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 [&>*]:pointer-events-none ${meta.accent}`}
     >
       <span className="relative z-10 flex items-center justify-center gap-2">
         <span aria-hidden="true">{meta.icon}</span>
