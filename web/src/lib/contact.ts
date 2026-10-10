@@ -148,12 +148,46 @@ export function normalizeContactLink(
 /** Placeholder stored when a creator leaves the contact field blank. */
 export const CONTACT_LINK_PLACEHOLDER: string = "";
 
+/**
+ * Resolves ANY value stored in `listings.contact_link` into a usable deep link.
+ * Handles: canonical wa.me/t.me URLs, arbitrary http(s) URLs, and legacy rows
+ * that contain raw phone numbers (e.g. "08012345678", "+2348012345678").
+ * Returns null only for genuinely missing/empty values.
+ */
+export function resolveContactHref(contactLink: string | null | undefined): string | null {
+  if (typeof contactLink !== "string") return null;
+  const trimmed: string = contactLink.trim();
+  if (trimmed.length === 0) return null;
+  // Canonical / arbitrary URL — use as-is (never re-normalize a valid URL).
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  // Legacy raw phone number → normalize to a wa.me deep link.
+  const digits: string = trimmed.replace(/[^\d]/g, "").replace(/^00/, "");
+  if (digits.length >= MIN_PHONE_DIGITS && digits.length <= MAX_PHONE_DIGITS) {
+    const normalized: string | null = buildWhatsAppUrl(digits, "");
+    if (normalized !== null) return normalized;
+  }
+  // Unknown format but non-empty: still better than showing nothing.
+  return trimmed;
+}
+
+/** Derives the chat channel from a stored contact_link value. */
+export function channelFromContactLink(contactLink: string | null | undefined): ContactChannel {
+  if (typeof contactLink !== "string") return "whatsapp";
+  return /t\.me/i.test(contactLink) || /^@/.test(contactLink.trim()) ? "telegram" : "whatsapp";
+}
+
 /** Convenience wrapper used directly by the CTA component. */
 export function createChatHref(
   channel: ContactChannel,
   rawValue: string | null | undefined,
   message: string,
 ): string | null {
+  // A full URL stored in listings.contact_link is authoritative: use it as-is.
+  if (typeof rawValue === "string") {
+    const trimmed: string = rawValue.trim();
+    if (/^https?:\/\/wa\.me\/.+/i.test(trimmed)) return trimmed;
+    if (/^https?:\/\/t\.me\/[a-z0-9_]+/i.test(trimmed)) return trimmed;
+  }
   const handle: ContactHandle | null = parseContactHandle(channel, rawValue);
   if (handle === null) return null;
   const link: ChatLinkResult | null = buildChatLink(handle, message);

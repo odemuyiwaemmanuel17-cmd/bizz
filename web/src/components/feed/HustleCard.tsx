@@ -54,7 +54,12 @@ export default function HustleCard({ card }: HustleCardProps): ReactElement {
             {votesCount.toLocaleString("en-US")}
           </span>
         </div>
-        <ChatWithCreator listingTitle={card.title} channel={card.contactChannel} handle={card.contactHandle} />
+        <ChatWithCreator
+          listingTitle={card.title}
+          contactLink={card.contactLink}
+          channel={card.contactChannel}
+          handle={card.contactHandle}
+        />
       </div>
     </article>
   );

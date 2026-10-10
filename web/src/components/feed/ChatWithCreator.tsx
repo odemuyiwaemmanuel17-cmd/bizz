@@ -1,10 +1,20 @@
 import { useState, type ReactElement } from "react";
-import { createChatHref, defaultMessage, parseContactHandle, type ContactChannel } from "../../lib/contact";
+import {
+  channelFromContactLink,
+  createChatHref,
+  defaultMessage,
+  parseContactHandle,
+  resolveContactHref,
+  type ContactChannel,
+} from "../../lib/contact";
 
 interface ChatWithCreatorProps {
   readonly listingTitle: string;
-  readonly channel: ContactChannel;
-  readonly handle: string;
+  /** Canonical listings.contact_link value (source of truth). */
+  readonly contactLink?: string | null;
+  /** Legacy profile-based handle (fallback only). */
+  readonly channel?: ContactChannel;
+  readonly handle?: string;
 }
 
 const CHANNEL_META: Readonly<Record<ContactChannel, { label: string; icon: string; accent: string }>> = Object.freeze({
@@ -13,18 +23,34 @@ const CHANNEL_META: Readonly<Record<ContactChannel, { label: string; icon: strin
 });
 
 /**
- * "Chat with Creator" CTA. Builds a pre-filled wa.me / t.me deep link at click
- * time (so the message always reflects the current listing title) and opens it
- * in a new tab. Renders a disabled state when the creator has no usable handle.
+ * "Chat with Creator" CTA. Prefers the canonical `listings.contact_link` deep
+ * link stored on the row itself; falls back to the creator's profile handle.
+ * Builds a pre-filled wa.me / t.me message at click time and opens it in a new
+ * tab. Renders a disabled state ONLY when both sources are genuinely empty.
  */
-export default function ChatWithCreator({ listingTitle, channel, handle }: ChatWithCreatorProps): ReactElement {
+export default function ChatWithCreator({
+  listingTitle,
+  contactLink,
+  channel = "whatsapp",
+  handle = "",
+}: ChatWithCreatorProps): ReactElement {
   const [opened, setOpened] = useState<boolean>(false);
-  const meta = CHANNEL_META[channel];
-  const valid: boolean = parseContactHandle(channel, handle) !== null;
+
+  // Trace layer 5→6: what actually reaches the card, straight from Supabase.
+  if (typeof window !== "undefined" && window.location.hostname !== "localhost") {
+    console.log("CONTACT DEBUG", { listingTitle, contactLink, handle });
+  }
+
+  // Resolution order: canonical contact_link → legacy profile handle.
+  const resolvedHref: string | null = resolveContactHref(contactLink) ?? createChatHref(channel, handle, "");
+  const effectiveChannel: ContactChannel =
+    resolveContactHref(contactLink) !== null ? channelFromContactLink(contactLink) : channel;
+  const valid: boolean = resolvedHref !== null || parseContactHandle(channel, handle) !== null;
+  const meta = CHANNEL_META[valid ? effectiveChannel : channel];
 
   const openChat = (): void => {
-    if (!valid) return;
-    const url: string | null = createChatHref(channel, handle, defaultMessage(listingTitle));
+    const url: string | null =
+      resolvedHref ?? createChatHref(effectiveChannel, handle, defaultMessage(listingTitle));
     if (url === null) return;
     window.open(url, "_blank", "noopener,noreferrer");
     setOpened(true);
@@ -52,7 +78,7 @@ export default function ChatWithCreator({ listingTitle, channel, handle }: ChatW
     >
       <span className="relative z-10 flex items-center justify-center gap-2">
         <span aria-hidden="true">{meta.icon}</span>
-        {opened ? "Message ready — chat opened" : "Chat with Creator"}
+        {opened ? "Message ready — chat opened" : meta.label}
       </span>
       <span
         aria-hidden="true"

@@ -12,7 +12,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSupabase } from "./supabase";
-import type { ContactChannel } from "./contact";
+import { normalizeContactLink, type ContactChannel } from "./contact";
 
 /* ------------------------------------------------------------------ */
 /* Feed view model                                                     */
@@ -72,6 +72,8 @@ export interface HustleCardData {
   readonly creator: CreatorInfo;
   readonly contactChannel: ContactChannel;
   readonly contactHandle: string;
+  /** Canonical listing-level contact deep link from listings.contact_link. */
+  readonly contactLink: string | null;
 }
 
 export interface FeedPage {
@@ -154,6 +156,7 @@ interface ListingRow {
   readonly price_cents: number | null;
   readonly created_at: string | null;
   readonly user_id?: string | null;
+  readonly contact_link?: string | null;
   readonly profiles?: ProfileLite | null;
   readonly votes_count?: number | null;
 }
@@ -191,6 +194,8 @@ function rowToCard(row: ListingRow): HustleCardData | null {
     creator,
     contactChannel: toContactChannel(profile?.contact_channel),
     contactHandle: profile?.contact_handle ?? "",
+    // Canonical source of truth for the CTA: listings.contact_link.
+    contactLink: typeof row.contact_link === "string" && row.contact_link.trim().length > 0 ? row.contact_link.trim() : null,
   });
 }
 
@@ -225,6 +230,7 @@ function seedCards(): ReadonlyArray<HustleCardData> {
       creator: Object.freeze({ id: `seed-creator-${index % 4}`, displayName, avatarUrl: null }),
       contactChannel,
       contactHandle,
+      contactLink: normalizeContactLink(contactChannel, contactHandle),
     });
 
   return Object.freeze([
