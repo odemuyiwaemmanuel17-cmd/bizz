@@ -95,7 +95,14 @@ export default function HustleFeed(): ReactElement {
       <div className="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
         {feed.loading
           ? Array.from({ length: 6 }, (_unused: undefined, index: number) => <SkeletonCard key={`skeleton-${index}`} />)
-          : feed.items.map((card: HustleCardData) => <HustleCard key={card.id} card={card} />)}
+          : feed.items.map((card: HustleCardData) => (
+              <HustleCard
+                key={card.id}
+                card={card}
+                isLiked={feed.likedIds.has(card.id)}
+                likeCount={feed.likeCounts.get(card.id) ?? 0}
+              />
+            ))}
       </div>
 
       {!feed.loading && feed.items.length === 0 && (

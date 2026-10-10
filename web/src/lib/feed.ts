@@ -12,6 +12,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSupabase } from "./supabase";
+import { fetchListingLikes } from "./listingLikes";
 import { normalizeContactLink, type ContactChannel } from "./contact";
 
 /* ------------------------------------------------------------------ */
@@ -390,16 +391,13 @@ export async function fetchHustleFeed(query: FeedQuery = {}): Promise<FeedPage> 
 }
 
 /**
- * Vote counts for a batch of listing ids. AUDIT: the legacy `votes` table was
- * standardized onto idea voting (columns: id, idea_id, user_id, vote_type)
- * and no longer carries `listing_id`, so marketplace listings have NO real
- * vote source yet. We deliberately return an empty map (honest zeros) instead
- * of querying a table that would error or faking listing votes with idea
- * infrastructure. Wire this back once a proper marketplace-votes schema
- * exists.
+ * Live like counts + per-user like state for a batch of listing ids, sourced
+ * from public.listing_likes (UNIQUE listing_id+user_id). Marketplace hearts
+ * ONLY — Bizz/Fizz idea voting lives in idea_votes and must never be mixed.
  */
-export async function voteCountsFor(_ids: ReadonlyArray<string>): Promise<ReadonlyMap<string, number>> {
-  return new Map<string, number>();
+export async function voteCountsFor(ids: ReadonlyArray<string>): Promise<ReadonlyMap<string, number>> {
+  const snapshot = await fetchListingLikes(ids);
+  return snapshot.counts;
 }
 
 /** Attach live vote tallies to already-fetched cards (best effort). */

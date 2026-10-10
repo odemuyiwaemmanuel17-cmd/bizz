@@ -100,3 +100,36 @@ a {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ============================================================
+   Marketplace like button — hard cursor/selection guarantee.
+   Appended last so it wins the cascade. The clickable root is a
+   real <button data-bizz-like-button>; every descendant (SVG,
+   path, label span) defers hover/cursor to the button itself.
+   ============================================================ */
+button[data-bizz-like-button] {
+  cursor: pointer !important;
+  user-select: none !important;
+  -webkit-user-select: none !important;
+  position: relative !important;
+  z-index: 9999 !important;
+  pointer-events: auto !important;
+}
+
+button[data-bizz-like-button]:disabled {
+  cursor: progress !important;
+}
+
+button[data-bizz-like-button] *,
+button[data-bizz-like-button] svg,
+button[data-bizz-like-button] path {
+  cursor: pointer !important;
+  user-select: none !important;
+  -webkit-user-select: none !important;
+  pointer-events: none !important;
+}
+
+button[data-bizz-like-button]::before,
+button[data-bizz-like-button]::after {
+  pointer-events: none !important;
+}

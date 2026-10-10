@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { subscribeToBizzEvents } from "../lib/events";
+import { fetchListingLikes, type ListingLikeSnapshot } from "../lib/listingLikes";
 import {
   DEFAULT_PAGE_SIZE,
   fetchHustleFeed,
@@ -26,9 +27,18 @@ export interface UseHustleFeedResult {
   readonly next: () => void;
   readonly previous: () => void;
   readonly refresh: () => void;
+  /** Listing ids the current user liked (public.listing_likes). */
+  readonly likedIds: ReadonlySet<string>;
+  /** Live like counts per listing id (derived from listing_likes rows). */
+  readonly likeCounts: ReadonlyMap<string, number>;
 }
 
 const EMPTY_PAGE: FeedPage = Object.freeze({ items: Object.freeze([]), total: 0, page: 1, pageSize: DEFAULT_PAGE_SIZE, error: null });
+
+const EMPTY_LIKES: ListingLikeSnapshot = Object.freeze({
+  counts: new Map<string, number>(),
+  mine: new Set<string>(),
+});
 
 /** Stateful feed hook: category tab + pagination, with cancellation-safe fetches. */
 export function useHustleFeed(initialCategory: FeedCategory = "all"): UseHustleFeedResult {
@@ -119,6 +129,22 @@ export function useHustleFeed(initialCategory: FeedCategory = "all"): UseHustleF
     [feed.items, debouncedSearch],
   );
 
+  /* ---- live like state from public.listing_likes ---- */
+  // Re-fetch whenever the visible set of listing ids changes or a bizz event
+  // fires (the load() dependency below re-triggers on category/page change).
+  const itemKey: string = useMemo(() => items.map((c: HustleCardData) => c.id).join(","), [items]);
+  const [likes, setLikes] = useState<ListingLikeSnapshot>(EMPTY_LIKES);
+  useEffect(() => {
+    let cancelled = false;
+    const ids: string[] = itemKey.length === 0 ? [] : itemKey.split(",");
+    void fetchListingLikes(ids).then((snapshot: ListingLikeSnapshot) => {
+      if (!cancelled) setLikes(snapshot);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [itemKey]);
+
   return {
     items,
     total: feed.total,
@@ -135,5 +161,7 @@ export function useHustleFeed(initialCategory: FeedCategory = "all"): UseHustleF
     next,
     previous,
     refresh: load,
+    likedIds: likes.mine,
+    likeCounts: likes.counts,
   };
 }
