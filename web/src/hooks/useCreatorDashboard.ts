@@ -1,5 +1,6 @@
 /** React hook: loads the signed-in creator's dashboard data. */
 import { useCallback, useEffect, useState } from "react";
+import type { User } from "@supabase/supabase-js";
 import { subscribeToBizzEvents } from "../lib/events";
 import { useAuth } from "./useAuth";
 import {
@@ -12,6 +13,7 @@ import {
 
 export interface UseCreatorDashboardResult {
   readonly isAuthenticated: boolean;
+  readonly user: User | null;
   readonly loading: boolean;
   readonly error: string | null;
   readonly listings: ReadonlyArray<DashboardListing>;
@@ -69,6 +71,7 @@ export function useCreatorDashboard(): UseCreatorDashboardResult {
 
   return {
     isAuthenticated: auth.isAuthenticated && userId !== null,
+    user: auth.user,
     loading,
     error,
     listings,

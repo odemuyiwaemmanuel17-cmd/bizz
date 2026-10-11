@@ -6,7 +6,7 @@ import { useAuth } from "../hooks/useAuth";
 
 export default function DashboardPage(): ReactElement {
   const navigate = useNavigate();
-  const { isAuthenticated, status, signOut } = useAuth();
+  const { isAuthenticated, status } = useAuth();
   const [checking, setChecking] = useState<boolean>(true);
 
   // Auth guard: wait for the session to resolve, then bounce guests to /auth.
@@ -25,11 +25,6 @@ export default function DashboardPage(): ReactElement {
     }, 1200);
     return () => window.clearTimeout(timer);
   }, [isAuthenticated, status, navigate]);
-
-  async function handleSignOut(): Promise<void> {
-    await signOut(); // clears the Supabase session
-    navigate("/auth", { replace: true });
-  }
 
   if (checking && status !== "config-missing") {
     return (
@@ -58,16 +53,12 @@ export default function DashboardPage(): ReactElement {
 
   return (
     <div className="pt-24">
-      {/* Page-level header with isolated sign-out action */}
+      {/* Page header — the big "Sign out & clear session" button was removed;
+          creator identity + profile controls now live at the top of the
+          dashboard (see CreatorHeader). Sign out remains in the navbar, and
+          Profile → Account still offers a full session clear. */}
       <div className="mx-auto flex w-full max-w-5xl flex-wrap items-center justify-between gap-3 px-4 sm:px-6">
         <h1 className="text-3xl font-black tracking-tight text-white">Dashboard</h1>
-        <button
-          type="button"
-          onClick={() => void handleSignOut()}
-          className="rounded-xl border border-red-400/30 bg-red-500/10 px-4 py-2 text-sm font-semibold text-red-200 transition hover:bg-red-500/20 active:scale-[0.97]"
-        >
-          Sign out &amp; clear session
-        </button>
       </div>
       <CreatorDashboard />
     </div>

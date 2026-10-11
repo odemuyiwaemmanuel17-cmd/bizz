@@ -1,6 +1,7 @@
-/** Creator dashboard: stats cards + lists of the user's bizzes & concepts. */
+/** Creator dashboard: identity header + stats cards + lists of the user's bizzes & concepts. */
 import { useState } from "react";
 import { useCreatorDashboard } from "../../hooks/useCreatorDashboard";
+import { CreatorHeader } from "./CreatorHeader";
 import { formatPrice, type FeedCategory } from "../../lib/feed";
 import { isValidated } from "../../lib/ideas";
 import type { DashboardIdea, DashboardListing } from "../../lib/dashboard";
@@ -102,7 +103,10 @@ export function CreatorDashboard() {
 
   return (
     <section id="dashboard" className="mx-auto w-full max-w-5xl px-4 py-14">
-      <div className="flex flex-wrap items-end justify-between gap-3">
+      {/* Creator identity + profile controls (replaces the old sign-out button) */}
+      {dash.user !== null && <CreatorHeader user={dash.user} onRefresh={() => void dash.refresh()} />}
+
+      <div className="mt-8 flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 className="text-2xl font-bold text-white">Your creator dashboard</h2>
           <p className="mt-1 text-sm text-slate-400">Track your bizzes, concepts and community support.</p>
