@@ -104,7 +104,7 @@ export function CreatorDashboard() {
   return (
     <section id="dashboard" className="mx-auto w-full max-w-5xl px-4 py-14">
       {/* Creator identity + profile controls (replaces the old sign-out button) */}
-      {dash.user !== null && <CreatorHeader user={dash.user} onRefresh={() => void dash.refresh()} />}
+      {dash.user !== null && <CreatorHeader user={dash.user} />}
 
       <div className="mt-8 flex flex-wrap items-end justify-between gap-3">
         <div>
