@@ -69,6 +69,13 @@ create table if not exists public.creator_videos (
   caption text,
   created_at timestamptz not null default now()
 );
+-- The table may already exist from an earlier creator-video migration. Keep
+-- the columns used by the web client present in that case as well.
+alter table public.creator_videos add column if not exists user_id uuid references public.profiles(id) on delete cascade;
+alter table public.creator_videos add column if not exists storage_path text;
+alter table public.creator_videos add column if not exists video_url text;
+alter table public.creator_videos add column if not exists caption text;
+alter table public.creator_videos add column if not exists created_at timestamptz not null default now();
 alter table public.creator_videos enable row level security;
 drop policy if exists "creator videos readable" on public.creator_videos;
 create policy "creator videos readable" on public.creator_videos for select using (true);

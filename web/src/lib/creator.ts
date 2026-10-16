@@ -199,6 +199,9 @@ export async function publishCreatorVideo(
     } catch {
       // Keep the original publish error visible to the creator.
     }
+    if (error instanceof Error && error.message.includes("video_url") && error.message.includes("schema cache")) {
+      throw new Error("Your Supabase creator_videos table is missing video_url. Run the creator-video migration in supabase/schema-patch.sql, then try again.");
+    }
     if (error instanceof Error && error.message.startsWith("Video record could not be published:")) {
       throw error;
     }
