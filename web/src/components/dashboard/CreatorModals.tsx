@@ -27,9 +27,9 @@ function normalizeUsername(value: string): string {
 }
 
 function ModalShell({ title, children, onClose }: { title: string; children: ReactElement; onClose: () => void }): ReactElement {
-  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" role="dialog" aria-modal="true" aria-labelledby="creator-modal-title">
-    <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-3xl border border-white/10 bg-slate-950 p-6 shadow-2xl">
-      <div className="mb-5 flex items-center justify-between gap-4"><h2 id="creator-modal-title" className="text-xl font-bold text-white">{title}</h2><button type="button" onClick={onClose} className="text-2xl text-slate-400 hover:text-white" aria-label="Close">×</button></div>
+  return <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/70 px-4 py-4 sm:items-center" role="dialog" aria-modal="true" aria-labelledby="creator-modal-title">
+    <div className="my-auto max-h-[calc(100vh-2rem)] w-full max-w-lg overflow-y-auto rounded-3xl border border-white/10 bg-slate-950 p-6 shadow-2xl">
+      <div className="sticky top-0 z-10 mb-5 flex items-center justify-between gap-4 bg-slate-950 pb-2"><h2 id="creator-modal-title" className="text-xl font-bold text-white">{title}</h2><button type="button" onClick={onClose} className="text-2xl text-slate-400 hover:text-white" aria-label="Close">×</button></div>
       {children}
     </div>
   </div>;
