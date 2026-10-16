@@ -144,6 +144,7 @@ export async function publishCreatorVideo(
   user: User,
   file: File,
   caption: string,
+  onStatus?: (status: "uploading" | "saving") => void,
 ): Promise<{ readonly id: string; readonly storagePath: string; readonly videoUrl: string }> {
   const validationError = validateVideoFile(file);
   if (validationError !== null) throw new Error(validationError);
@@ -158,16 +159,24 @@ export async function publishCreatorVideo(
     : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const storagePath = `${user.id}/${randomId}-${safeName}`;
   const storage = sb.storage.from("creator-videos");
-  const uploaded = await storage.upload(storagePath, file, {
-    contentType: file.type,
-    upsert: false,
-  });
-  if (uploaded.error !== null) {
-    throw new Error(`Video storage upload failed: ${uploaded.error.message}`);
+  onStatus?.("uploading");
+  const uploadPromise = storage.upload(storagePath, file, { contentType: file.type, upsert: false });
+  let timeoutId: ReturnType<typeof globalThis.setTimeout> | undefined;
+  try {
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeoutId = globalThis.setTimeout(() => reject(new Error("Video upload timed out after 2 minutes. Check your connection or try a smaller video.")), 120_000);
+    });
+    const uploaded = await Promise.race([uploadPromise, timeoutPromise]);
+    if (uploaded.error !== null) throw new Error(`Video storage upload failed: ${uploaded.error.message}`);
+  } catch (error: unknown) {
+    throw new Error(error instanceof Error ? `Video storage upload failed: ${error.message}` : "Video storage upload failed.");
+  } finally {
+    if (timeoutId !== undefined) globalThis.clearTimeout(timeoutId);
   }
 
   const videoUrl = storage.getPublicUrl(storagePath).data.publicUrl;
   try {
+    onStatus?.("saving");
     const inserted = await sb
       .from("creator_videos")
       .insert({

@@ -14,6 +14,7 @@ export default function CreatorVideoUploadPage(): ReactElement {
   const [preview, setPreview] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<boolean>(false);
+  const [stage, setStage] = useState<"uploading" | "saving" | null>(null);
 
   useEffect(() => {
     if (status === "config-missing") {
@@ -68,7 +69,7 @@ export default function CreatorVideoUploadPage(): ReactElement {
     setError(null);
     setBusy(true);
     try {
-      await publishCreatorVideo(user, file, caption);
+      await publishCreatorVideo(user, file, caption, setStage);
       toast.push({
         title: "Video published 🎬",
         description: "Your video is now on your creator profile.",
@@ -79,6 +80,7 @@ export default function CreatorVideoUploadPage(): ReactElement {
       setError(publishError instanceof Error ? publishError.message : "Video could not be published.");
     } finally {
       setBusy(false);
+      setStage(null);
     }
   }
 
@@ -147,11 +149,12 @@ export default function CreatorVideoUploadPage(): ReactElement {
             </label>
 
             {error !== null && <p role="alert" className="rounded-xl border border-rose-400/30 bg-rose-500/10 p-3 text-sm text-rose-200">{error}</p>}
+            {stage !== null && <p role="status" aria-live="polite" className="rounded-xl border border-cyan-400/20 bg-cyan-400/5 p-3 text-sm text-cyan-100">{stage === "uploading" ? "Uploading the video to secure storage…" : "Upload complete. Saving the video to your creator profile…"}</p>}
             <div className="flex flex-wrap justify-end gap-3 border-t border-white/10 pt-5">
               <Link to="/dashboard" className="btn-glass">Cancel</Link>
-              <button type="submit" disabled={busy} className="btn-primary disabled:cursor-not-allowed disabled:opacity-60">
-                {busy ? "Publishing…" : "Publish video"}
-              </button>
+               <button type="submit" disabled={busy} className="btn-primary disabled:cursor-not-allowed disabled:opacity-60">
+                 {stage === "uploading" ? "Uploading…" : stage === "saving" ? "Saving…" : "Publish video"}
+               </button>
             </div>
           </form>
         </section>
