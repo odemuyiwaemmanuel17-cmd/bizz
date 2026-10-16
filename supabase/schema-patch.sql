@@ -47,6 +47,45 @@ create policy "anyone can post a bizz" on public.listings for insert to authenti
 notify pgrst, 'reload schema';
 
 -- =====================================================================
+-- Creator control center: public usernames and creator videos.
+-- Run this block in the Supabase SQL editor before using profile/video
+-- publishing. The frontend intentionally reports a clear error until it
+-- has been applied; it never fabricates a successful upload.
+-- =====================================================================
+alter table public.profiles add column if not exists username text;
+alter table public.profiles add column if not exists bio text;
+alter table public.profiles add column if not exists campus text;
+alter table public.profiles add column if not exists state text;
+alter table public.profiles add column if not exists country text;
+alter table public.profiles add column if not exists creator_type text;
+alter table public.profiles add column if not exists is_verified boolean not null default false;
+create unique index if not exists profiles_username_lower_idx on public.profiles (lower(username)) where username is not null;
+
+create table if not exists public.creator_videos (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  storage_path text not null unique,
+  video_url text not null,
+  caption text,
+  created_at timestamptz not null default now()
+);
+alter table public.creator_videos enable row level security;
+drop policy if exists "creator videos readable" on public.creator_videos;
+create policy "creator videos readable" on public.creator_videos for select using (true);
+drop policy if exists "creator owns videos" on public.creator_videos;
+create policy "creator owns videos" on public.creator_videos for all using (user_id = auth.uid()) with check (user_id = auth.uid());
+
+insert into storage.buckets (id, name, public) values ('creator-videos', 'creator-videos', true) on conflict (id) do nothing;
+drop policy if exists "creator videos public read" on storage.objects;
+create policy "creator videos public read" on storage.objects for select using (bucket_id = 'creator-videos');
+drop policy if exists "creator uploads videos" on storage.objects;
+create policy "creator uploads videos" on storage.objects for insert to authenticated with check (bucket_id = 'creator-videos' and (storage.foldername(name))[1] = auth.uid()::text);
+drop policy if exists "creator manages videos" on storage.objects;
+create policy "creator manages videos" on storage.objects for delete to authenticated using (bucket_id = 'creator-videos' and (storage.foldername(name))[1] = auth.uid()::text);
+
+notify pgrst, 'reload schema';
+
+-- =====================================================================
 -- Publish fix: listings.contact_link must never be NULL.
 -- The Post-a-Bizz wizard now always sends a normalised WhatsApp/Telegram
 -- deep link (or "" when the creator leaves it blank), but existing rows
