@@ -19,6 +19,7 @@ create table if not exists public.creator_videos (
   storage_path text,
   video_url text,
   caption text,
+  status text not null default 'published' check (status in ('uploading', 'failed', 'published', 'private')),
   created_at timestamptz not null default now()
 );
 
@@ -27,12 +28,16 @@ alter table public.creator_videos add column if not exists user_id uuid referenc
 alter table public.creator_videos add column if not exists storage_path text;
 alter table public.creator_videos add column if not exists video_url text;
 alter table public.creator_videos add column if not exists caption text;
+alter table public.creator_videos add column if not exists status text not null default 'published';
 alter table public.creator_videos add column if not exists created_at timestamptz not null default now();
+update public.creator_videos set status = 'published' where status is null;
+alter table public.creator_videos drop constraint if exists creator_videos_status_check;
+alter table public.creator_videos add constraint creator_videos_status_check check (status in ('uploading', 'failed', 'published', 'private'));
 
 alter table public.creator_videos enable row level security;
 drop policy if exists "creator videos readable" on public.creator_videos;
 create policy "creator videos readable" on public.creator_videos
-  for select using (true);
+  for select using (status = 'published' or user_id = auth.uid());
 drop policy if exists "creator owns videos" on public.creator_videos;
 create policy "creator owns videos" on public.creator_videos
   for all using (user_id = auth.uid()) with check (user_id = auth.uid());

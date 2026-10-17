@@ -204,6 +204,7 @@ export async function publishCreatorVideo(
         storage_path: storagePath,
         video_url: videoUrl,
         caption: caption.trim() || null,
+        status: "published",
       })
       .select("id")
       .single();

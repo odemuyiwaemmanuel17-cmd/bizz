@@ -3,7 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { getSupabase } from "../lib/supabase";
 
 interface Profile { id: string; username: string; display_name: string | null; bio: string | null; avatar_url: string | null; campus: string | null; state: string | null; country: string | null; creator_type: string | null; is_verified: boolean | null; }
-interface Video { id: string; video_url: string; caption: string | null; }
+interface Video { id: string; video_url: string; caption: string | null; status: "published"; }
 interface Item { id: string; title: string; description: string | null; }
 
 export default function CreatorProfilePage(): ReactElement {
@@ -28,10 +28,12 @@ export default function CreatorProfilePage(): ReactElement {
         if (!result.data) { setError("Creator profile not found."); return; }
         const row = result.data as Profile;
         const [videoResult, listingResult, ideaResult] = await Promise.all([
-          sb.from("creator_videos").select("id,video_url,caption").eq("user_id", row.id).order("created_at", { ascending: false }),
+          sb.from("creator_videos").select("id,video_url,caption,status").eq("user_id", row.id).eq("status", "published").order("created_at", { ascending: false }),
           sb.from("listings").select("id,title,description").eq("user_id", row.id).eq("status", "active").order("created_at", { ascending: false }),
           sb.from("ideas").select("id,title,description").eq("user_id", row.id).order("created_at", { ascending: false }),
         ]);
+        const relatedError = videoResult.error ?? listingResult.error ?? ideaResult.error;
+        if (relatedError !== null) throw new Error(relatedError.message);
         if (active) { setProfile(row); setVideos((videoResult.data as Video[] | null) ?? []); setListings((listingResult.data as Item[] | null) ?? []); setIdeas((ideaResult.data as Item[] | null) ?? []); }
       } catch (err) { if (active) setError(err instanceof Error ? err.message : "Profile could not be loaded."); }
       finally { if (active) setLoading(false); }
