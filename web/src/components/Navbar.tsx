@@ -11,6 +11,7 @@ interface NavbarProps {
 const LINKS: ReadonlyArray<{ label: string; to: string }> = [
   { label: "Home", to: "/" },
   { label: "Discover", to: "/discover" },
+  { label: "Videos", to: "/videos" },
   { label: "Validation", to: "/validation" },
   { label: "Dashboard", to: "/dashboard" },
 ];
