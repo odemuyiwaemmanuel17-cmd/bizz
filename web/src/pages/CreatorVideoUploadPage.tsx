@@ -15,6 +15,7 @@ export default function CreatorVideoUploadPage(): ReactElement {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<boolean>(false);
   const [stage, setStage] = useState<"uploading" | "saving" | null>(null);
+  const [progress, setProgress] = useState<number>(0);
 
   useEffect(() => {
     if (status === "config-missing") {
@@ -69,7 +70,7 @@ export default function CreatorVideoUploadPage(): ReactElement {
     setError(null);
     setBusy(true);
     try {
-      await publishCreatorVideo(user, file, caption, setStage);
+      await publishCreatorVideo(user, file, caption, setStage, setProgress);
       toast.push({
         title: "Video published 🎬",
         description: "Your video is now on your creator profile.",
@@ -81,6 +82,7 @@ export default function CreatorVideoUploadPage(): ReactElement {
     } finally {
       setBusy(false);
       setStage(null);
+      setProgress(0);
     }
   }
 
@@ -149,7 +151,7 @@ export default function CreatorVideoUploadPage(): ReactElement {
             </label>
 
             {error !== null && <p role="alert" className="rounded-xl border border-rose-400/30 bg-rose-500/10 p-3 text-sm text-rose-200">{error}</p>}
-            {stage !== null && <p role="status" aria-live="polite" className="rounded-xl border border-cyan-400/20 bg-cyan-400/5 p-3 text-sm text-cyan-100">{stage === "uploading" ? "Uploading the video to secure storage…" : "Upload complete. Saving the video to your creator profile…"}</p>}
+            {stage !== null && <div role="status" aria-live="polite" className="rounded-xl border border-cyan-400/20 bg-cyan-400/5 p-3 text-sm text-cyan-100"><p>{stage === "uploading" ? `Uploading the video to secure storage… ${progress}%` : "Upload complete. Saving the video to your creator profile…"}</p>{stage === "uploading" && <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full bg-cyan-400 transition-all" style={{ width: `${progress}%` }} /></div>}</div>}
             <div className="flex flex-wrap justify-end gap-3 border-t border-white/10 pt-5">
               <Link to="/dashboard" className="btn-glass">Cancel</Link>
                <button type="submit" disabled={busy} className="btn-primary disabled:cursor-not-allowed disabled:opacity-60">

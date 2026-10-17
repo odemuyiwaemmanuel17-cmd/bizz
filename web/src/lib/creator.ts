@@ -1,5 +1,7 @@
 import type { User } from "@supabase/supabase-js";
+import { Upload } from "tus-js-client";
 import { ensureProfileRow, getSupabase } from "./supabase";
+import { APP_ENV } from "./env";
 
 export interface CreatorProfileForm {
   username: string;
@@ -145,6 +147,7 @@ export async function publishCreatorVideo(
   file: File,
   caption: string,
   onStatus?: (status: "uploading" | "saving") => void,
+  onProgress?: (percent: number) => void,
 ): Promise<{ readonly id: string; readonly storagePath: string; readonly videoUrl: string }> {
   const validationError = validateVideoFile(file);
   if (validationError !== null) throw new Error(validationError);
@@ -160,18 +163,32 @@ export async function publishCreatorVideo(
   const storagePath = `${user.id}/${randomId}-${safeName}`;
   const storage = sb.storage.from("creator-videos");
   onStatus?.("uploading");
-  const uploadPromise = storage.upload(storagePath, file, { contentType: file.type, upsert: false });
-  let timeoutId: ReturnType<typeof globalThis.setTimeout> | undefined;
-  try {
-    const timeoutPromise = new Promise<never>((_, reject) => {
-      timeoutId = globalThis.setTimeout(() => reject(new Error("Video upload timed out after 2 minutes. Check your connection or try a smaller video.")), 120_000);
+  if (APP_ENV.supabaseUrl === null || APP_ENV.supabaseAnonKey === null) throw new Error("Supabase is not configured.");
+  const session = await sb.auth.getSession();
+  const accessToken = session.data.session?.access_token;
+  if (accessToken === undefined) throw new Error("Your session expired. Sign in again before uploading.");
+
+  // Supabase recommends resumable TUS uploads for larger files. The previous
+  // single-request upload could appear frozen on slow connections and could
+  // not resume after a dropped connection.
+  if (file.size > 6 * 1024 * 1024) {
+    await new Promise<void>((resolve, reject) => {
+      const upload = new Upload(file, {
+        endpoint: `${APP_ENV.supabaseUrl}/storage/v1/upload/resumable`,
+        retryDelays: [0, 1000, 3000, 5000, 10000],
+        chunkSize: 6 * 1024 * 1024,
+        headers: { authorization: `Bearer ${accessToken}`, apikey: APP_ENV.supabaseAnonKey as string, "x-upsert": "false" },
+        metadata: { bucketName: "creator-videos", objectName: storagePath, contentType: file.type, cacheControl: "3600" },
+        onProgress: (sent: number, total: number) => onProgress?.(Math.round((sent / total) * 100)),
+        onSuccess: () => resolve(),
+        onError: (error: Error) => reject(new Error(`Video storage upload failed: ${error.message}`)),
+      });
+      upload.start();
     });
-    const uploaded = await Promise.race([uploadPromise, timeoutPromise]);
+  } else {
+    const uploaded = await storage.upload(storagePath, file, { contentType: file.type, upsert: false });
     if (uploaded.error !== null) throw new Error(`Video storage upload failed: ${uploaded.error.message}`);
-  } catch (error: unknown) {
-    throw new Error(error instanceof Error ? `Video storage upload failed: ${error.message}` : "Video storage upload failed.");
-  } finally {
-    if (timeoutId !== undefined) globalThis.clearTimeout(timeoutId);
+    onProgress?.(100);
   }
 
   const videoUrl = storage.getPublicUrl(storagePath).data.publicUrl;
