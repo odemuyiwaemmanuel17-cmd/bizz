@@ -126,7 +126,7 @@ export default function CreatorVideoUploadPage(): ReactElement {
                 disabled={busy}
                 className="block w-full cursor-pointer rounded-2xl border border-dashed border-white/20 bg-white/5 p-5 text-sm text-slate-300 file:mr-4 file:rounded-full file:border-0 file:bg-violetGlow/20 file:px-4 file:py-2 file:font-semibold file:text-violet-100 hover:border-violet-300/60 disabled:cursor-not-allowed disabled:opacity-60"
               />
-              <p className="mt-2 text-xs text-slate-500">MP4, WebM, or another browser-supported video up to 100 MB.</p>
+               <p className="mt-2 text-xs text-slate-500">MP4 or WebM up to 100 MB. For the fastest upload, use a compressed 720p video under 20 MB.</p>
             </div>
 
             {preview !== null && (

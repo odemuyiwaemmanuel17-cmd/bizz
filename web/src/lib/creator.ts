@@ -171,12 +171,15 @@ export async function publishCreatorVideo(
   // Supabase recommends resumable TUS uploads for larger files. The previous
   // single-request upload could appear frozen on slow connections and could
   // not resume after a dropped connection.
-  if (file.size > 6 * 1024 * 1024) {
+  // Keep medium files on the faster single-request path. TUS has extra
+  // handshake/chunk overhead, so using it for every file made short videos
+  // noticeably slower. Large files use 20 MB chunks to reduce round trips.
+  if (file.size > 20 * 1024 * 1024) {
     await new Promise<void>((resolve, reject) => {
       const upload = new Upload(file, {
         endpoint: `${APP_ENV.supabaseUrl}/storage/v1/upload/resumable`,
         retryDelays: [0, 1000, 3000, 5000, 10000],
-        chunkSize: 6 * 1024 * 1024,
+        chunkSize: 20 * 1024 * 1024,
         headers: { authorization: `Bearer ${accessToken}`, apikey: APP_ENV.supabaseAnonKey as string, "x-upsert": "false" },
         metadata: { bucketName: "creator-videos", objectName: storagePath, contentType: file.type, cacheControl: "3600" },
         onProgress: (sent: number, total: number) => onProgress?.(Math.round((sent / total) * 100)),
