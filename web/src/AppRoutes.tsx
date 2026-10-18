@@ -14,6 +14,7 @@ import CreatorProfileSetupPage from "./pages/CreatorProfileSetupPage";
 import CreatorProfileEditPage from "./pages/CreatorProfileEditPage";
 import CreatorVideoUploadPage from "./pages/CreatorVideoUploadPage";
 import VideosPage from "./pages/VideosPage";
+import SavedVideosPage from "./pages/SavedVideosPage";
 
 export default function AppRoutes(): ReactElement {
   const [postOpen, setPostOpen] = useState<boolean>(false);
@@ -27,6 +28,7 @@ export default function AppRoutes(): ReactElement {
         <Route path="/" element={<LandingPage />} />
         <Route path="/discover" element={<DiscoverPage />} />
         <Route path="/videos" element={<VideosPage />} />
+        <Route path="/saved-videos" element={<SavedVideosPage />} />
         <Route path="/validation" element={<ValidationPage />} />
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/dashboard/profile/setup" element={<CreatorProfileSetupPage />} />
