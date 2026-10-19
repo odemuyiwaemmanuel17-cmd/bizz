@@ -148,6 +148,7 @@ export async function publishCreatorVideo(
   caption: string,
   onStatus?: (status: "uploading" | "saving") => void,
   onProgress?: (percent: number) => void,
+  listingId?: string | null,
 ): Promise<{ readonly id: string; readonly storagePath: string; readonly videoUrl: string }> {
   const validationError = validateVideoFile(file);
   if (validationError !== null) throw new Error(validationError);
@@ -205,6 +206,7 @@ export async function publishCreatorVideo(
         video_url: videoUrl,
         caption: caption.trim() || null,
         status: "published",
+        listing_id: listingId ?? null,
       })
       .select("id")
       .single();

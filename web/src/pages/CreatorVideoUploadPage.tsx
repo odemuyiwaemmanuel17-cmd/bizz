@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { useToast } from "../components/ui/Toaster";
 import { useAuth } from "../hooks/useAuth";
 import { publishCreatorVideo, validateVideoFile } from "../lib/creator";
+import { getSupabase } from "../lib/supabase";
 
 export default function CreatorVideoUploadPage(): ReactElement {
   const navigate = useNavigate();
@@ -16,6 +17,8 @@ export default function CreatorVideoUploadPage(): ReactElement {
   const [busy, setBusy] = useState<boolean>(false);
   const [stage, setStage] = useState<"uploading" | "saving" | null>(null);
   const [progress, setProgress] = useState<number>(0);
+  const [listings, setListings] = useState<Array<{ id: string; title: string }>>([]);
+  const [listingId, setListingId] = useState<string>("");
 
   useEffect(() => {
     if (status === "config-missing") {
@@ -37,6 +40,15 @@ export default function CreatorVideoUploadPage(): ReactElement {
       if (preview !== null) URL.revokeObjectURL(preview);
     };
   }, [preview]);
+
+  useEffect(() => {
+    if (user === null) return;
+    const sb = getSupabase();
+    if (sb === null) return;
+    void sb.from("listings").select("id,title").eq("user_id", user.id).eq("status", "active").order("created_at", { ascending: false }).then((result) => {
+      if (result.error === null) setListings((result.data ?? []) as Array<{ id: string; title: string }>);
+    });
+  }, [user]);
 
   function chooseFile(next: File | null): void {
     setError(null);
@@ -70,7 +82,7 @@ export default function CreatorVideoUploadPage(): ReactElement {
     setError(null);
     setBusy(true);
     try {
-      await publishCreatorVideo(user, file, caption, setStage, setProgress);
+      await publishCreatorVideo(user, file, caption, setStage, setProgress, listingId || null);
       toast.push({
         title: "Video published 🎬",
         description: "Your video is now on your creator profile.",
@@ -149,6 +161,8 @@ export default function CreatorVideoUploadPage(): ReactElement {
               />
               <span className="mt-1 block text-right text-xs text-slate-500">{caption.length}/280</span>
             </label>
+
+            <label className="block text-sm text-slate-300"><span>Connect to a Bizz <span className="text-slate-500">(optional)</span></span><select value={listingId} onChange={(event) => setListingId(event.target.value)} disabled={busy} className="mt-1 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-white"><option value="">No linked Bizz</option>{listings.map((listing) => <option key={listing.id} value={listing.id}>{listing.title}</option>)}</select><span className="mt-1 block text-xs text-slate-500">Only your active listings are available.</span></label>
 
             {error !== null && <p role="alert" className="rounded-xl border border-rose-400/30 bg-rose-500/10 p-3 text-sm text-rose-200">{error}</p>}
             {stage !== null && <div role="status" aria-live="polite" className="rounded-xl border border-cyan-400/20 bg-cyan-400/5 p-3 text-sm text-cyan-100"><p>{stage === "uploading" ? `Uploading the video to secure storage… ${progress}%` : "Upload complete. Saving the video to your creator profile…"}</p>{stage === "uploading" && <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full bg-cyan-400 transition-all" style={{ width: `${progress}%` }} /></div>}</div>}
