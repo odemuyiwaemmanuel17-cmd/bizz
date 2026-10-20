@@ -13,7 +13,6 @@ import CreatorProfilePage from "./pages/CreatorProfilePage";
 import CreatorProfileSetupPage from "./pages/CreatorProfileSetupPage";
 import CreatorProfileEditPage from "./pages/CreatorProfileEditPage";
 import CreatorVideoUploadPage from "./pages/CreatorVideoUploadPage";
-import VideosPage from "./pages/VideosPage";
 import SavedVideosPage from "./pages/SavedVideosPage";
 import ListingDetailPage from "./pages/ListingDetailPage";
 
@@ -28,14 +27,15 @@ export default function AppRoutes(): ReactElement {
       <Routes>
         <Route path="/" element={<LandingPage />} />
         <Route path="/discover" element={<DiscoverPage />} />
-        <Route path="/videos" element={<VideosPage />} />
-        <Route path="/saved-videos" element={<SavedVideosPage />} />
+        <Route path="/videos" element={<Navigate to="/discover?mode=videos" replace />} />
+        <Route path="/saved-videos" element={<Navigate to="/dashboard/saved-videos" replace />} />
         <Route path="/listing/:listingId" element={<ListingDetailPage />} />
         <Route path="/validation" element={<ValidationPage />} />
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/dashboard/profile/setup" element={<CreatorProfileSetupPage />} />
         <Route path="/dashboard/profile/edit" element={<CreatorProfileEditPage />} />
         <Route path="/dashboard/video/upload" element={<CreatorVideoUploadPage />} />
+        <Route path="/dashboard/saved-videos" element={<SavedVideosPage />} />
         <Route path="/auth" element={<AuthPage />} />
         <Route path="/@:username" element={<CreatorProfilePage />} />
         <Route path="/feed" element={<Navigate to="/discover" replace />} />
