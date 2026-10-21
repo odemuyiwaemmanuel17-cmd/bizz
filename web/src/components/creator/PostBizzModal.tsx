@@ -5,7 +5,7 @@ import { formatPrice, CATEGORY_TABS, type FeedCategory } from "../../lib/feed";
 import { normalizeContactLink } from "../../lib/contact";
 import { VALIDATION_THRESHOLD_BIZZ } from "../../lib/ideas";
 import { useToast, type ToastApi, type ToastInput } from "../ui/Toaster";
-import type { PublishedListing } from "../../lib/ideas";
+import { SUPPORTED_CURRENCIES, type PublishedListing } from "../../lib/ideas";
 
 interface PostBizzModalProps {
   readonly open: boolean;
@@ -99,7 +99,7 @@ export default function PostBizzModal({ open, onClose }: PostBizzModalProps): Re
 
   const { stepIndex, steps, draft, errors, image, imageError, uploading, uploadPercent, submitting, submitError, published } = wizard;
   const needsAuth: boolean = !auth.isAuthenticated && auth.status !== "config-missing";
-  const priceDollars: string = (draft.priceCents / 100).toFixed(2);
+  const priceDollars: string = draft.priceCents > 0 ? (draft.priceCents / 100).toFixed(2) : "";
 
   const handleClose = (): void => {
     wizard.reset();
@@ -256,23 +256,25 @@ export default function PostBizzModal({ open, onClose }: PostBizzModalProps): Re
                     </div>
                     <div>
                       <label htmlFor="bizz-price" className="mb-1.5 block text-sm font-semibold text-slate-200">
-                        Price (USD) {draft.isConcept ? "— target price" : ""}
+                        Price {draft.isConcept ? "— target price" : ""}
                       </label>
+                      <div className="mb-2 flex gap-2"><button type="button" onClick={() => wizard.updateDraft({ isFree: true, priceCents: 0 })} className={`flex-1 rounded-xl border px-3 py-2 text-xs font-semibold ${draft.isFree ? "border-cyanGlow/50 bg-cyanGlow/10 text-white" : "border-white/10 text-slate-400"}`}>Free</button><button type="button" onClick={() => wizard.updateDraft({ isFree: false })} className={`flex-1 rounded-xl border px-3 py-2 text-xs font-semibold ${!draft.isFree ? "border-cyanGlow/50 bg-cyanGlow/10 text-white" : "border-white/10 text-slate-400"}`}>Paid</button></div>
                       <div className="relative">
-                        <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm text-slate-500">$</span>
+                        <select aria-label="Currency" value={draft.currency} onChange={(event) => wizard.updateDraft({ currency: event.target.value })} disabled={draft.isFree} className="absolute left-2 top-1/2 z-10 -translate-y-1/2 rounded-lg bg-slate-900 px-2 py-1 text-xs text-white">{SUPPORTED_CURRENCIES.map((code) => <option key={code} value={code}>{code}</option>)}</select>
                         <input
                           id="bizz-price"
                           type="number"
                           min={0}
                           max={10000}
-                          step={0.5}
+                           step={0.5}
+                           disabled={draft.isFree}
                           inputMode="decimal"
-                          className={`${inputClass} pl-8`}
+                           className={`${inputClass} pl-24`}
                           placeholder="0.00"
-                          value={draft.priceCents === 0 ? "" : priceDollars}
+                           value={priceDollars}
                           onChange={(event) => {
-                            const parsed: number = Math.round((Number.parseFloat(event.target.value || "0") || 0) * 100);
-                            wizard.updateDraft({ priceCents: Math.max(0, parsed) });
+                             const parsed: number = Number.parseFloat(event.target.value);
+                             wizard.updateDraft({ priceCents: Number.isFinite(parsed) ? Math.round(parsed * 100) : Number.NaN, isFree: false });
                           }}
                         />
                       </div>
@@ -414,7 +416,7 @@ export default function PostBizzModal({ open, onClose }: PostBizzModalProps): Re
                     <dt className="text-slate-500">Category</dt>
                     <dd className="font-medium capitalize text-white">{draft.category}</dd>
                     <dt className="text-slate-500">Price</dt>
-                    <dd className="font-medium text-white">{formatPrice(draft.priceCents, draft.currency)}</dd>
+                     <dd className="font-medium text-white">{formatPrice(draft.priceCents, draft.currency, draft.isFree)}</dd>
                     {!draft.isConcept && (
                       <>
                         <dt className="text-slate-500">Contact link</dt>

@@ -66,8 +66,9 @@ export interface HustleCardData {
   readonly blurb: string;
   readonly category: FeedCategory;
   /** Integer minor units (cents); use `formatPrice` for display. */
-  readonly priceCents: number;
+  readonly priceCents: number | null;
   readonly currency: string;
+  readonly isFree: boolean;
   readonly votesCount: number;
   readonly createdAt: string; // ISO timestamp
   readonly creator: CreatorInfo;
@@ -120,15 +121,31 @@ const CURRENCY_SYMBOLS: Readonly<Record<string, string>> = Object.freeze({
   EUR: "€",
   GBP: "£",
   INR: "₹",
+  NGN: "₦",
+  GHS: "GH₵",
+  KES: "KSh",
 });
 
 /** Formats integer cents into a compact price tag ("$12", "$12.50", "Free"). */
-export function formatPrice(priceCents: number, currency: string = "USD"): string {
-  if (!Number.isFinite(priceCents) || priceCents <= 0) return "Free";
-  const symbol: string = CURRENCY_SYMBOLS[currency.toUpperCase()] ?? `${currency.toUpperCase()} `;
-  const rupees: number = Math.round(priceCents) / 100;
-  const fractionDigits: number = Number.isInteger(rupees) ? 0 : 2;
-  return `${symbol}${rupees.toFixed(fractionDigits)}`;
+export function formatPrice(priceCents: number | null | undefined, currency: string = "USD", isFree?: boolean): string {
+  // Keep the legacy helper contract for existing callers/tests that do not
+  // provide explicit free/paid semantics. Persisted listing views pass the
+  // third argument and therefore never mistake a missing price for Free.
+  if (isFree === undefined) {
+    if (typeof priceCents !== "number" || !Number.isFinite(priceCents) || priceCents <= 0) return "Free";
+    const legacyAmount = Math.round(priceCents) / 100;
+    const legacySymbol = CURRENCY_SYMBOLS[currency.toUpperCase()] ?? `${currency.toUpperCase()} `;
+    return `${legacySymbol}${Number.isInteger(legacyAmount) ? legacyAmount.toFixed(0) : legacyAmount.toFixed(2)}`;
+  }
+  if (isFree === true) return "Free";
+  if (typeof priceCents !== "number" || !Number.isFinite(priceCents) || priceCents < 0) return "Price unavailable";
+  const code = currency.toUpperCase();
+  try {
+    return new Intl.NumberFormat(undefined, { style: "currency", currency: code, minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(priceCents / 100);
+  } catch {
+    const symbol: string = CURRENCY_SYMBOLS[code] ?? `${code} `;
+    return `${symbol}${(Math.round(priceCents) / 100).toFixed(2)}`;
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -155,6 +172,8 @@ interface ListingRow {
   readonly blurb?: string | null;
   readonly category: string | null;
   readonly price_cents: number | null;
+  readonly currency?: string | null;
+  readonly is_free?: boolean | null;
   readonly created_at: string | null;
   readonly user_id?: string | null;
   readonly contact_link?: string | null;
@@ -188,8 +207,9 @@ function rowToCard(row: ListingRow): HustleCardData | null {
     title,
     blurb: pitchOf(row),
     category: normalizeFeedCategory(row.category),
-    priceCents: typeof row.price_cents === "number" && Number.isFinite(row.price_cents) ? Math.max(0, Math.round(row.price_cents)) : 0,
-    currency: "USD",
+    priceCents: typeof row.price_cents === "number" && Number.isFinite(row.price_cents) ? Math.max(0, Math.round(row.price_cents)) : null,
+    currency: typeof row.currency === "string" && /^[A-Z]{3}$/.test(row.currency) ? row.currency : "USD",
+    isFree: row.is_free === true,
     votesCount: typeof row.votes_count === "number" ? Math.max(0, row.votes_count) : 0,
     createdAt: typeof row.created_at === "string" ? row.created_at : new Date(0).toISOString(),
     creator,
@@ -226,6 +246,7 @@ function seedCards(): ReadonlyArray<HustleCardData> {
       category,
       priceCents,
       currency: "USD",
+      isFree: priceCents === 0,
       votesCount,
       createdAt: new Date(now - index * day).toISOString(),
       creator: Object.freeze({ id: `seed-creator-${index % 4}`, displayName, avatarUrl: null }),

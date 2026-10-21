@@ -19,7 +19,9 @@ export interface DashboardListing {
   readonly id: string;
   readonly title: string;
   readonly category: FeedCategory;
-  readonly priceCents: number;
+  readonly priceCents: number | null;
+  readonly currency: string;
+  readonly isFree: boolean;
   readonly imageUrl: string | null;
   readonly votesCount: number;
   readonly createdAt: string;
@@ -51,6 +53,8 @@ interface ListingRow {
   readonly title: string | null;
   readonly category: string | null;
   readonly price_cents: number | null;
+  readonly currency?: string | null;
+  readonly is_free?: boolean | null;
   /** Alternate live-schema variant storing whole-dollar prices. */
   readonly price?: number | null;
   readonly image_url: string | null;
@@ -129,7 +133,7 @@ export async function fetchCreatorDashboard(userId: string): Promise<DashboardRe
     // Query 1: the user's own listings, filtered by the ownership source of
     // truth (`user_id`). Plain columns with tolerant fallbacks (e.g. `price`
     // in dollars when `price_cents` is absent); never embedded joins/aliases.
-    const listingCols = "id, title, description, blurb, category, price_cents, price, image_url, status, created_at, user_id";
+    const listingCols = "id, title, description, blurb, category, price_cents, price, currency, is_free, image_url, status, created_at, user_id";
     const listingsQ = await selectOwnedRows<ListingRow>(sb, "listings", listingCols, userId);
     // Query 2: the user's own concepts (`select('*')` so we never reference a
     // column that might not exist on the live table).
@@ -161,7 +165,9 @@ export async function fetchCreatorDashboard(userId: string): Promise<DashboardRe
             ? Math.max(0, Math.round(row.price_cents))
             : typeof row.price === "number" && Number.isFinite(row.price)
               ? Math.max(0, Math.round(row.price * 100)) // dollars → cents
-              : 0,
+              : null,
+        currency: typeof row.currency === "string" ? row.currency : "USD",
+        isFree: row.is_free === true,
         imageUrl: row.image_url ?? null,
         votesCount: votesByListing.get(row.id) ?? 0,
         createdAt: row.created_at ?? new Date().toISOString(),

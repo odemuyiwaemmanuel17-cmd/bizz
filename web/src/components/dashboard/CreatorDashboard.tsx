@@ -44,7 +44,7 @@ function ListingRow({ listing }: { readonly listing: DashboardListing }) {
       <div className="min-w-0">
         <p className="truncate text-sm font-semibold text-white">{listing.title}</p>
         <p className="mt-0.5 text-xs text-slate-400">
-          {CATEGORY_LABELS[listing.category] ?? "Digital"} · {formatPrice(listing.priceCents)} · posted {relativeDate(listing.createdAt)}
+          {CATEGORY_LABELS[listing.category] ?? "Digital"} · {formatPrice(listing.priceCents, listing.currency, listing.isFree)} · posted {relativeDate(listing.createdAt)}
         </p>
       </div>
       <span className="shrink-0 rounded-full bg-emerald-400/10 px-2.5 py-1 text-xs font-medium text-emerald-300">

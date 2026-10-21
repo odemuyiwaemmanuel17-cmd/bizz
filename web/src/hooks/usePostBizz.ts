@@ -13,7 +13,9 @@ import {
   type PublishResult,
   type PublishedListing,
   type ValidatedImage,
+  currencyForCountry,
 } from "../lib/ideas";
+import { getSupabase } from "../lib/supabase";
 import { useAuth } from "./useAuth";
 
 export interface UsePostBizzResult {
@@ -57,6 +59,18 @@ export function usePostBizz(): UsePostBizzResult {
   const [published, setPublished] = useState<PublishedListing | null>(null);
   const generationRef = useRef<number>(0);
   const previewRef = useRef<string | null>(null);
+  const currencyInitialized = useRef(false);
+
+  useEffect(() => {
+    if (currencyInitialized.current || auth.user === null) return;
+    currencyInitialized.current = true;
+    const sb = getSupabase();
+    if (sb === null) return;
+    void sb.from("profiles").select("country").eq("id", auth.user.id).maybeSingle().then((result) => {
+      const country = (result.data as { country?: string | null } | null)?.country;
+      setDraft((previous) => previous.currency === "USD" ? Object.freeze({ ...previous, currency: currencyForCountry(country) }) : previous);
+    });
+  }, [auth.user]);
 
   // Revoke any live object URL on unmount to avoid leaks.
   useEffect(() => {

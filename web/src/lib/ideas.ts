@@ -186,6 +186,7 @@ export interface ListingDraft {
   readonly category: FeedCategory;
   readonly priceCents: number;
   readonly currency: string;
+  readonly isFree: boolean;
   readonly imageUrl: string | null;
   readonly isConcept: boolean;
   /** Outreach channel used for the `contact_link` deep link. */
@@ -200,11 +201,21 @@ export const EMPTY_DRAFT: ListingDraft = Object.freeze({
   category: "services",
   priceCents: 0,
   currency: "USD",
+  isFree: true,
   imageUrl: null,
   isConcept: false,
   contactChannel: "whatsapp",
   contactHandle: "",
 });
+
+export const SUPPORTED_CURRENCIES = Object.freeze(["NGN", "USD", "GBP", "EUR", "GHS", "KES", "INR"] as const);
+export type SupportedCurrency = (typeof SUPPORTED_CURRENCIES)[number];
+
+export function currencyForCountry(country: string | null | undefined): SupportedCurrency {
+  const code = (country ?? "").trim().toUpperCase();
+  const map: Readonly<Record<string, SupportedCurrency>> = { NG: "NGN", NIGERIA: "NGN", US: "USD", "UNITED STATES": "USD", GB: "GBP", UK: "GBP", GH: "GHS", GHANA: "GHS", KE: "KES", KENYA: "KES", IN: "INR", INDIA: "INR", DE: "EUR", FR: "EUR", ES: "EUR", IT: "EUR" };
+  return map[code] ?? "USD";
+}
 
 export const FORM_STEPS = ["Basics", "Details", "Media", "Review"] as const;
 export type FormStep = (typeof FORM_STEPS)[number];
@@ -258,6 +269,7 @@ export function validateDraftStep(draft: ListingDraft, stepIndex: number): Draft
     if (draft.category === "all") errors.category = "Pick a real category tab.";
     const priceError: string | null = validatePrice(draft.priceCents, draft.isConcept);
     if (priceError !== null) errors.priceCents = priceError;
+    if (!/^[A-Z]{3}$/.test(draft.currency)) errors.currency = "Choose a valid ISO currency.";
     // Contact is optional, but when provided it must be a valid WhatsApp
     // phone or Telegram handle so we can store a usable deep link. Blank
     // input is allowed and falls back to a non-null placeholder on insert.
@@ -817,7 +829,7 @@ export async function publishListing(draft: ListingDraft): Promise<PublishResult
     const contactLink: string = normalizedContact ?? CONTACT_LINK_PLACEHOLDER;
 
     interface ListingPayload {
-      readonly [key: string]: string | number | null;
+      readonly [key: string]: string | number | boolean | null;
     }
 
     const baseFields = {
@@ -836,11 +848,11 @@ export async function publishListing(draft: ListingDraft): Promise<PublishResult
      */
     const attempts: ReadonlyArray<ListingPayload> = Object.freeze([
       // Primary — current live schema: explicit user_id + description + price_cents.
-      { ...baseFields, user_id: userId, description: trimmedPitch, price_cents: draft.priceCents },
+      { ...baseFields, user_id: userId, description: trimmedPitch, price_cents: draft.isFree ? 0 : draft.priceCents, currency: draft.currency, is_free: draft.isFree },
       // Variant — legacy `blurb` column name instead of `description`.
-      { ...baseFields, user_id: userId, blurb: trimmedPitch, price_cents: draft.priceCents },
+      { ...baseFields, user_id: userId, blurb: trimmedPitch, price_cents: draft.isFree ? 0 : draft.priceCents, currency: draft.currency, is_free: draft.isFree },
       // Variant — price stored in major units (`price` numeric).
-      { ...baseFields, user_id: userId, description: trimmedPitch, price: draft.priceCents / 100 },
+      { ...baseFields, user_id: userId, description: trimmedPitch, price: draft.isFree ? 0 : draft.priceCents / 100, currency: draft.currency, is_free: draft.isFree },
     ]);
 
     let lastError: string | null = null;

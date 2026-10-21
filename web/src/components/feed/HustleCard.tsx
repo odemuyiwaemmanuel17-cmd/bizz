@@ -83,7 +83,7 @@ export default function HustleCard({ card, isLiked = false, likeCount = 0 }: Hus
       <div className="flex items-start justify-between gap-3">
         <CategoryBadge category={card.category} />
         <span className="rounded-full bg-gradient-to-r from-indigoGlow/20 to-violetGlow/20 px-3 py-1 text-sm font-bold text-white ring-1 ring-white/10">
-          {formatPrice(card.priceCents, card.currency)}
+          {formatPrice(card.priceCents, card.currency, card.isFree)}
         </span>
       </div>
 
