@@ -126,25 +126,59 @@ const CURRENCY_SYMBOLS: Readonly<Record<string, string>> = Object.freeze({
   KES: "KSh",
 });
 
+/** Converts a database minor-unit value, including bigint JSON strings, safely to a number. */
+export function priceCentsFromValue(value: unknown): number | null {
+  if (typeof value === "number") {
+    return Number.isFinite(value) && Number.isSafeInteger(Math.round(value)) && value >= 0 ? Math.round(value) : null;
+  }
+  if (typeof value === "bigint") {
+    return value >= 0n && value <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(value) : null;
+  }
+  if (typeof value === "string" && /^\d+$/.test(value.trim())) {
+    try {
+      const parsed = BigInt(value.trim());
+      return parsed <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(parsed) : null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+/** Converts a major-unit legacy price into minor units without float rounding. */
+export function priceCentsFromMajorValue(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) value = String(value);
+  if (typeof value !== "string" || !/^\d+(?:\.\d{0,2})?$/.test(value.trim())) return null;
+  const [whole = "0", fraction = ""] = value.trim().split(".");
+  try {
+    const total = BigInt(whole) * 100n + BigInt(`${fraction}00`.slice(0, 2));
+    return total <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(total) : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Formats integer cents into a compact price tag ("$12", "$12.50", "Free"). */
-export function formatPrice(priceCents: number | null | undefined, currency: string = "USD", isFree?: boolean): string {
+export function formatPrice(priceCents: number | string | bigint | null | undefined, currency: string = "USD", isFree?: boolean): string {
   // Keep the legacy helper contract for existing callers/tests that do not
   // provide explicit free/paid semantics. Persisted listing views pass the
   // third argument and therefore never mistake a missing price for Free.
   if (isFree === undefined) {
-    if (typeof priceCents !== "number" || !Number.isFinite(priceCents) || priceCents <= 0) return "Free";
-    const legacyAmount = Math.round(priceCents) / 100;
+    const legacyCents = priceCentsFromValue(priceCents);
+    if (legacyCents === null || legacyCents <= 0) return "Free";
+    const legacyAmount = legacyCents / 100;
     const legacySymbol = CURRENCY_SYMBOLS[currency.toUpperCase()] ?? `${currency.toUpperCase()} `;
     return `${legacySymbol}${Number.isInteger(legacyAmount) ? legacyAmount.toFixed(0) : legacyAmount.toFixed(2)}`;
   }
   if (isFree === true) return "Free";
-  if (typeof priceCents !== "number" || !Number.isFinite(priceCents) || priceCents < 0) return "Price unavailable";
+  const normalizedCents = priceCentsFromValue(priceCents);
+  if (normalizedCents === null) return "Price unavailable";
   const code = currency.toUpperCase();
   try {
-    return new Intl.NumberFormat(undefined, { style: "currency", currency: code, minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(priceCents / 100);
+    return new Intl.NumberFormat(undefined, { style: "currency", currency: code, minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(normalizedCents / 100);
   } catch {
     const symbol: string = CURRENCY_SYMBOLS[code] ?? `${code} `;
-    return `${symbol}${(Math.round(priceCents) / 100).toFixed(2)}`;
+    return `${symbol}${(normalizedCents / 100).toFixed(2)}`;
   }
 }
 
@@ -171,9 +205,9 @@ interface ListingRow {
   readonly description?: string | null;
   readonly blurb?: string | null;
   readonly category: string | null;
-  readonly price_cents: number | null;
+  readonly price_cents: unknown;
   /** Legacy/live-schema fallback storing major currency units. */
-  readonly price?: number | null;
+  readonly price?: unknown;
   readonly currency?: string | null;
   readonly is_free?: boolean | null;
   readonly created_at: string | null;
@@ -210,11 +244,7 @@ function rowToCard(row: ListingRow): HustleCardData | null {
     blurb: pitchOf(row),
     category: normalizeFeedCategory(row.category),
     priceCents:
-      typeof row.price_cents === "number" && Number.isFinite(row.price_cents)
-        ? Math.max(0, Math.round(row.price_cents))
-        : typeof row.price === "number" && Number.isFinite(row.price) && Number.isSafeInteger(Math.round(row.price * 100))
-          ? Math.max(0, Math.round(row.price * 100))
-          : null,
+      priceCentsFromValue(row.price_cents) ?? priceCentsFromMajorValue(row.price),
     currency: typeof row.currency === "string" && /^[A-Z]{3}$/.test(row.currency) ? row.currency : "USD",
     isFree: row.is_free === true,
     votesCount: typeof row.votes_count === "number" ? Math.max(0, row.votes_count) : 0,

@@ -13,7 +13,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSupabase } from "./supabase";
 import { computeTally, isValidated, type SentimentTally } from "./ideas";
-import { normalizeFeedCategory, type FeedCategory } from "./feed";
+import { normalizeFeedCategory, priceCentsFromMajorValue, priceCentsFromValue, type FeedCategory } from "./feed";
 
 export interface DashboardListing {
   readonly id: string;
@@ -52,11 +52,11 @@ interface ListingRow {
   readonly id: string;
   readonly title: string | null;
   readonly category: string | null;
-  readonly price_cents: number | null;
+  readonly price_cents: unknown;
   readonly currency?: string | null;
   readonly is_free?: boolean | null;
   /** Alternate live-schema variant storing whole-dollar prices. */
-  readonly price?: number | null;
+  readonly price?: unknown;
   readonly image_url: string | null;
   readonly status?: string | null;
   readonly created_at: string | null;
@@ -160,12 +160,7 @@ export async function fetchCreatorDashboard(userId: string): Promise<DashboardRe
         id: row.id,
         title: row.title ?? "Untitled bizz",
         category: normalizeFeedCategory(row.category),
-        priceCents:
-          typeof row.price_cents === "number" && Number.isFinite(row.price_cents)
-            ? Math.max(0, Math.round(row.price_cents))
-            : typeof row.price === "number" && Number.isFinite(row.price)
-              ? Math.max(0, Math.round(row.price * 100)) // dollars → cents
-              : null,
+        priceCents: priceCentsFromValue(row.price_cents) ?? priceCentsFromMajorValue(row.price),
         currency: typeof row.currency === "string" ? row.currency : "USD",
         isFree: row.is_free === true,
         imageUrl: row.image_url ?? null,
