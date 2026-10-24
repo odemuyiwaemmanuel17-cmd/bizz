@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactElement } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { getSupabase } from "../lib/supabase";
+import { updateCreatorVideoListing } from "../lib/creator";
 
 interface MyVideo {
   readonly id: string;
@@ -9,6 +10,13 @@ interface MyVideo {
   readonly caption: string | null;
   readonly status: string;
   readonly created_at: string;
+  readonly listing_id: string | null;
+}
+
+interface OwnedListing {
+  readonly id: string;
+  readonly title: string;
+  readonly status: string;
 }
 
 export default function MyVideosPage(): ReactElement {
@@ -17,6 +25,8 @@ export default function MyVideosPage(): ReactElement {
   const [videos, setVideos] = useState<ReadonlyArray<MyVideo>>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [listings, setListings] = useState<ReadonlyArray<OwnedListing>>([]);
+  const [savingVideoId, setSavingVideoId] = useState<string | null>(null);
 
   useEffect(() => {
     if (status === "config-missing") {
@@ -36,12 +46,23 @@ export default function MyVideosPage(): ReactElement {
         if (active) { setError("Supabase is not configured."); setLoading(false); }
         return;
       }
+      const listingResult = await sb
+        .from("listings")
+        .select("id,title,status")
+        .eq("user_id", ownerId)
+        .order("created_at", { ascending: false });
+      if (listingResult.error !== null) {
+        if (active) { setError(listingResult.error.message); setLoading(false); }
+        return;
+      }
+      setListings((listingResult.data ?? []) as OwnedListing[]);
+
       const pageSize = 1000;
       const allRows: MyVideo[] = [];
       for (let page = 0; ; page += 1) {
         const result = await sb
           .from("creator_videos")
-          .select("id,video_url,caption,status,created_at")
+          .select("id,video_url,caption,status,created_at,listing_id")
           .eq("user_id", ownerId)
           .eq("status", "published")
           .not("video_url", "is", null)
@@ -62,6 +83,22 @@ export default function MyVideosPage(): ReactElement {
     void load();
     return () => { active = false; };
   }, [isAuthenticated, navigate, status, user]);
+
+  async function changeListing(videoId: string, listingId: string | null): Promise<void> {
+    if (user === null) return;
+    setSavingVideoId(videoId);
+    setError(null);
+    const previous = videos.find((video) => video.id === videoId)?.listing_id ?? null;
+    setVideos((current) => current.map((video) => video.id === videoId ? { ...video, listing_id: listingId } : video));
+    try {
+      await updateCreatorVideoListing(user.id, videoId, listingId);
+    } catch (err) {
+      setVideos((current) => current.map((video) => video.id === videoId ? { ...video, listing_id: previous } : video));
+      setError(err instanceof Error ? err.message : "The Bizz association could not be updated.");
+    } finally {
+      setSavingVideoId(null);
+    }
+  }
 
   if (!isAuthenticated && status !== "config-missing") {
     return <main className="mx-auto max-w-xl px-4 pb-20 pt-32 text-center text-slate-400">Checking your session…</main>;
@@ -95,6 +132,20 @@ export default function MyVideosPage(): ReactElement {
               <div className="p-4">
                 <p className="text-xs text-slate-500">Published {new Date(video.created_at).toLocaleDateString()}</p>
                 {video.caption !== null && <p className="mt-2 text-sm leading-6 text-slate-300">{video.caption}</p>}
+                <label className="mt-4 block text-xs font-semibold uppercase tracking-wider text-slate-500">
+                  Linked Bizz
+                  <select
+                    value={video.listing_id ?? ""}
+                    onChange={(event) => void changeListing(video.id, event.target.value || null)}
+                    disabled={savingVideoId === video.id}
+                    className="mt-2 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm font-normal normal-case tracking-normal text-white disabled:opacity-60"
+                  >
+                    <option value="">No linked Bizz</option>
+                    {video.listing_id !== null && !listings.some((listing) => listing.id === video.listing_id) && <option value={video.listing_id}>Linked Bizz unavailable</option>}
+                    {listings.filter((listing) => listing.status === "active" || listing.id === video.listing_id).map((listing) => <option key={listing.id} value={listing.id}>{listing.title}{listing.status !== "active" ? " (unavailable)" : ""}</option>)}
+                  </select>
+                </label>
+                {video.listing_id !== null && listings.some((listing) => listing.id === video.listing_id && listing.status === "active") && <Link to={`/listing/${video.listing_id}`} className="mt-3 inline-block text-sm font-semibold text-cyan-200 hover:text-white">View Bizz →</Link>}
               </div>
             </article>
           ))}

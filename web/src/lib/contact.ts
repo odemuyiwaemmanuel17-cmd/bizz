@@ -158,16 +158,17 @@ export function resolveContactHref(contactLink: string | null | undefined): stri
   if (typeof contactLink !== "string") return null;
   const trimmed: string = contactLink.trim();
   if (trimmed.length === 0) return null;
-  // Canonical / arbitrary URL — use as-is (never re-normalize a valid URL).
-  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  // Only the supported seller-contact destinations are opened from a listing.
+  // Reject arbitrary URLs so contact_link cannot become an unvalidated redirect.
+  if (/^https:\/\/(?:wa\.me|t\.me)\//i.test(trimmed)) return trimmed;
   // Legacy raw phone number → normalize to a wa.me deep link.
   const digits: string = trimmed.replace(/[^\d]/g, "").replace(/^00/, "");
   if (digits.length >= MIN_PHONE_DIGITS && digits.length <= MAX_PHONE_DIGITS) {
     const normalized: string | null = buildWhatsAppUrl(digits, "");
     if (normalized !== null) return normalized;
   }
-  // Unknown format but non-empty: still better than showing nothing.
-  return trimmed;
+  // Unknown formats are not safe contact destinations.
+  return null;
 }
 
 /** Derives the chat channel from a stored contact_link value. */

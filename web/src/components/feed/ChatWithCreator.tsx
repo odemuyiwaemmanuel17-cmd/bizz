@@ -36,11 +36,6 @@ export default function ChatWithCreator({
 }: ChatWithCreatorProps): ReactElement {
   const [opened, setOpened] = useState<boolean>(false);
 
-  // Trace layer 5→6: what actually reaches the card, straight from Supabase.
-  if (typeof window !== "undefined" && window.location.hostname !== "localhost") {
-    console.log("CONTACT DEBUG", { listingTitle, contactLink, handle });
-  }
-
   // Resolution order: canonical contact_link → legacy profile handle.
   const resolvedHref: string | null = resolveContactHref(contactLink) ?? createChatHref(channel, handle, "");
   const effectiveChannel: ContactChannel =

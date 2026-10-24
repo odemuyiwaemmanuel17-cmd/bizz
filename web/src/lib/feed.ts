@@ -193,8 +193,6 @@ interface ProfileLite {
   readonly full_name?: string | null;
   readonly email?: string | null;
   readonly avatar_url?: string | null;
-  readonly contact_channel?: string | null;
-  readonly contact_handle?: string | null;
 }
 
 /** Raw shape returned by the plain listings select (profile hydrated separately). */
@@ -250,8 +248,10 @@ function rowToCard(row: ListingRow): HustleCardData | null {
     votesCount: typeof row.votes_count === "number" ? Math.max(0, row.votes_count) : 0,
     createdAt: typeof row.created_at === "string" ? row.created_at : new Date(0).toISOString(),
     creator,
-    contactChannel: toContactChannel(profile?.contact_channel),
-    contactHandle: profile?.contact_handle ?? "",
+    // Contact source of truth is listings.contact_link. Do not fall back to
+    // profile contact fields, which are not part of the listing contract.
+    contactChannel: toContactChannel(null),
+    contactHandle: "",
     // Canonical source of truth for the CTA: listings.contact_link.
     contactLink: typeof row.contact_link === "string" && row.contact_link.trim().length > 0 ? row.contact_link.trim() : null,
   });
@@ -329,8 +329,8 @@ export async function fetchHustleFeed(query: FeedQuery = {}): Promise<FeedPage> 
   if (sb === null) {
     // Offline demo mode: filter + paginate the seed set locally.
     const all: ReadonlyArray<HustleCardData> = seedCards();
-    const filtered: ReadonlyArray<HustleCardData> =
-      category === "all" ? all : all.filter((card: HustleCardData) => card.category === category);
+    const byCategory: ReadonlyArray<HustleCardData> = category === "all" ? all : all.filter((card: HustleCardData) => card.category === category);
+    const filtered: ReadonlyArray<HustleCardData> = filterCardsBySearch(byCategory, query.search ?? "");
     const start: number = (page - 1) * pageSize;
     return Object.freeze({
       items: Object.freeze(filtered.slice(start, start + pageSize)),
@@ -359,6 +359,11 @@ export async function fetchHustleFeed(query: FeedQuery = {}): Promise<FeedPage> 
       try {
         let builder = sb.from("listings").select("*", { count: "exact" });
         if (withStatusFilter) builder = builder.eq("status", "active");
+        const searchTerm = query.search?.trim() ?? "";
+        if (searchTerm.length > 0) {
+          const safeSearch = searchTerm.replace(/[,%()]/g, " ").replace(/[*]/g, " ");
+          builder = builder.or(`title.ilike.*${safeSearch}*,description.ilike.*${safeSearch}*`);
+        }
         const schemaValues: string[] =
           category === "all"
             ? []

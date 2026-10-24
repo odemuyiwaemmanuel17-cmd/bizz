@@ -63,7 +63,7 @@ export function useHustleFeed(initialCategory: FeedCategory = "all"): UseHustleF
     const requestId: number = ++requestIdRef.current;
     setLoading(true);
     setError(null);
-    void fetchHustleFeed({ category, page, pageSize: DEFAULT_PAGE_SIZE })
+    void fetchHustleFeed({ category, page, pageSize: DEFAULT_PAGE_SIZE, search: debouncedSearch })
       .then(async (result: FeedPage) => {
         if (requestId !== requestIdRef.current) return; // stale response — ignore
         // Hydrate live vote tallies (best effort; never hides listings).
@@ -85,7 +85,7 @@ export function useHustleFeed(initialCategory: FeedCategory = "all"): UseHustleF
         setError(err instanceof Error ? err.message : "Feed failed to load");
         setLoading(false);
       });
-  }, [category, page]);
+  }, [category, page, debouncedSearch]);
 
   useEffect(() => {
     load();

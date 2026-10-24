@@ -231,3 +231,24 @@ export async function publishCreatorVideo(
     throw new Error(error instanceof Error ? `Video record could not be published: ${error.message}` : "Video record could not be published.");
   }
 }
+
+/** Updates the optional Bizz association without republishing the video. */
+export async function updateCreatorVideoListing(
+  userId: string,
+  videoId: string,
+  listingId: string | null,
+): Promise<void> {
+  const sb = getSupabase();
+  if (sb === null) throw new Error("Supabase is not configured.");
+  const result = await sb
+    .from("creator_videos")
+    .update({ listing_id: listingId })
+    .eq("id", videoId)
+    .eq("user_id", userId);
+  if (result.error !== null) {
+    if (result.error.message.includes("listing_id") && result.error.message.includes("schema cache")) {
+      throw new Error("Video-to-Bizz linking is not enabled in Supabase. Run supabase/video-listing-link-migration.sql.");
+    }
+    throw new Error(result.error.message);
+  }
+}

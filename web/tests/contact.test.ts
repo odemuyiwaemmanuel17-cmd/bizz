@@ -9,6 +9,7 @@ import {
   defaultMessage,
   isValidContactHandle,
   parseContactHandle,
+  resolveContactHref,
 } from "../src/lib/contact";
 
 test("parseContactHandle normalizes messy phone numbers", () => {
@@ -67,4 +68,10 @@ test("buildChatLink returns typed channel results", () => {
   assert.notStrictEqual(handle, null);
   const link = buildChatLink(handle as NonNullable<typeof handle>, "ping");
   assert.deepStrictEqual(link, { url: "https://wa.me/15551234567?text=ping", channel: "whatsapp" });
+});
+
+test("resolveContactHref only accepts supported contact destinations", () => {
+  assert.strictEqual(resolveContactHref("https://wa.me/15551234567"), "https://wa.me/15551234567");
+  assert.strictEqual(resolveContactHref("https://t.me/creator"), "https://t.me/creator");
+  assert.strictEqual(resolveContactHref("https://example.com/contact"), null);
 });
