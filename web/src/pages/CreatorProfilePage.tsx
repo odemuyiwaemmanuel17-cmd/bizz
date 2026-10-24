@@ -4,14 +4,15 @@ import { getSupabase } from "../lib/supabase";
 import { fetchFollowState, toggleCreatorFollow } from "../lib/social";
 import { useAuth } from "../hooks/useAuth";
 import { formatPrice, priceCentsFromMajorValue, priceCentsFromValue } from "../lib/feed";
+import { normalizeProfileUsername } from "../lib/creator";
 
 interface Profile { id: string; username: string; display_name: string | null; bio: string | null; avatar_url: string | null; campus: string | null; state: string | null; country: string | null; creator_type: string | null; is_verified: boolean | null; }
 interface Video { id: string; video_url: string; caption: string | null; status: "published"; }
 interface Item { id: string; title: string; description: string | null; price_cents?: unknown; price?: unknown; currency?: string | null; is_free?: boolean | null; }
 
 export default function CreatorProfilePage(): ReactElement {
-  const { username: raw } = useParams<{ username: string }>();
-  const username = (raw ?? "").replace(/^@/, "");
+  const { username: rawUsername, creatorId: routeCreatorId } = useParams<{ username?: string; creatorId?: string }>();
+  const username = normalizeProfileUsername(rawUsername ?? "");
   const [profile, setProfile] = useState<Profile | null>(null);
   const [videos, setVideos] = useState<Video[]>([]);
   const [listings, setListings] = useState<Item[]>([]);
@@ -24,10 +25,13 @@ export default function CreatorProfilePage(): ReactElement {
   useEffect(() => {
     let active = true;
     async function load(): Promise<void> {
-      const sb = getSupabase();
-      if (sb === null) { setError("Supabase is not configured."); setLoading(false); return; }
-      try {
-        const result = await sb.from("profiles").select("*").eq("username", username).maybeSingle();
+       const sb = getSupabase();
+       if (sb === null) { setError("Supabase is not configured."); setLoading(false); return; }
+       if (routeCreatorId === undefined && !/^[a-z0-9_]{3,30}$/.test(username)) { setError("Creator profile not found."); setLoading(false); return; }
+       try {
+         const result = routeCreatorId === undefined
+           ? await sb.from("profiles").select("*").eq("username", username).maybeSingle()
+            : await sb.from("profiles").select("*").eq("id", routeCreatorId).maybeSingle();
         if (result.error) throw new Error(result.error.message);
         if (!result.data) { setError("Creator profile not found."); return; }
         const row = result.data as Profile;
@@ -44,7 +48,7 @@ export default function CreatorProfilePage(): ReactElement {
       finally { if (active) setLoading(false); }
     }
     void load(); return () => { active = false; };
-  }, [username]);
+  }, [routeCreatorId, username]);
 
   if (loading) return <div className="pt-32 text-center text-slate-400">Loading creator profile…</div>;
   if (error !== null || profile === null) return <div className="mx-auto max-w-3xl px-4 pb-16 pt-32 text-center"><p className="text-rose-200">{error ?? "Creator profile not found."}</p><Link to="/discover" className="btn-glass mt-5 inline-block">Back to Discover</Link></div>;

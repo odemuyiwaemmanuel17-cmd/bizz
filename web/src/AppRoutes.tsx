@@ -39,7 +39,10 @@ export default function AppRoutes(): ReactElement {
         <Route path="/dashboard/videos" element={<MyVideosPage />} />
         <Route path="/dashboard/saved-videos" element={<SavedVideosPage />} />
         <Route path="/auth" element={<AuthPage />} />
-        <Route path="/@:username" element={<CreatorProfilePage />} />
+        {/* React Router treats `@:username` as a literal path segment. Match the
+            complete segment and let CreatorProfilePage normalize the leading @. */}
+        <Route path="/creator/:creatorId" element={<CreatorProfilePage />} />
+        <Route path="/:username" element={<CreatorProfilePage />} />
         <Route path="/feed" element={<Navigate to="/discover" replace />} />
         <Route path="/validate" element={<Navigate to="/validation" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />

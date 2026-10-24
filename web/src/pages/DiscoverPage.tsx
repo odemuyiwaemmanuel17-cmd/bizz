@@ -5,6 +5,7 @@ import HustleFeed from "../components/feed/HustleFeed";
 import VideosPage from "./VideosPage";
 import { Link } from "react-router-dom";
 import { getSupabase } from "../lib/supabase";
+import { creatorProfilePath } from "../lib/creator";
 
 interface CreatorResult {
   readonly id: string;
@@ -51,7 +52,7 @@ function CreatorDiscovery(): ReactElement {
   return (
     <section aria-label="Creator discovery" className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
       {creators.map((creator) => (
-        <Link key={creator.id} to={`/@${creator.username}`} className="rounded-3xl border border-white/10 bg-white/5 p-5 transition hover:-translate-y-0.5 hover:border-cyan-300/30 hover:bg-white/10">
+        <Link key={creator.id} to={creatorProfilePath(creator.username, creator.id)} className="rounded-3xl border border-white/10 bg-white/5 p-5 transition hover:-translate-y-0.5 hover:border-cyan-300/30 hover:bg-white/10">
           <div className="flex items-center gap-3">
             <span className="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-2xl bg-violet-500/30 text-lg font-bold text-white">
               {creator.avatar_url ? <img src={creator.avatar_url} alt="" className="h-full w-full object-cover" /> : (creator.display_name ?? creator.username).charAt(0).toUpperCase()}

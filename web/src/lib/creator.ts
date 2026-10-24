@@ -47,6 +47,17 @@ export function normalizeUsername(value: string): string {
   return value.trim().toLowerCase().replace(/^@+/, "").replace(/[^a-z0-9_]/g, "");
 }
 
+/** Normalizes a public profile route parameter without silently repairing invalid characters. */
+export function normalizeProfileUsername(value: string): string {
+  return value.trim().replace(/^@+/, "").toLowerCase();
+}
+
+/** Builds the canonical public profile URL, falling back to the stable profile id. */
+export function creatorProfilePath(username: string | null | undefined, profileId: string): string {
+  const normalized = username === null || username === undefined ? "" : normalizeProfileUsername(username);
+  return normalized.length > 0 ? `/@${encodeURIComponent(normalized)}` : `/creator/${encodeURIComponent(profileId)}`;
+}
+
 export function creatorProfileFromRow(row: CreatorProfileRow | null): CreatorProfileData | null {
   if (row === null) return null;
   return {
