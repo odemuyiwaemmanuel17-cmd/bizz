@@ -12,6 +12,7 @@ import {
   isValidated,
   validateDraft,
   validateDraftStep,
+  parsePriceInputToCents,
   EMPTY_DRAFT,
   VALIDATION_THRESHOLD_BIZZ,
   type ListingDraft,
@@ -83,11 +84,18 @@ describe("validateDraft / validateDraftStep", () => {
     expect(validateDraftStep(fixed, 1).blurb).toBeDefined();
   });
 
-  it("rejects negative or absurd prices", () => {
+  it("rejects negative/non-numeric prices without imposing an arbitrary ceiling", () => {
     const base: ListingDraft = Object.freeze({ ...EMPTY_DRAFT, title: "Fine title", blurb: goodPitch });
     expect(validateDraft(Object.freeze({ ...base, priceCents: -100 })).priceCents).toBeDefined();
-    expect(validateDraft(Object.freeze({ ...base, priceCents: 20_000_00 })).priceCents).toBeDefined();
+    expect(validateDraft(Object.freeze({ ...base, priceCents: 20_000_00 })).priceCents).toBeUndefined();
     expect(validateDraft(Object.freeze({ ...base, priceCents: Number.NaN })).priceCents).toBeDefined();
+  });
+
+  it("parses large decimal prices without floating-point rounding", () => {
+    expect(parsePriceInputToCents("5,000")).toBe(500000);
+    expect(parsePriceInputToCents("15000.25")).toBe(1500025);
+    expect(parsePriceInputToCents("1000000000.99")).toBe(100000000099);
+    expect(Number.isNaN(parsePriceInputToCents("12.345"))).toBe(true);
   });
 
   it("lets concept drafts skip the pitch entirely", () => {

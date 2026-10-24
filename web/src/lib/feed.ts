@@ -172,6 +172,8 @@ interface ListingRow {
   readonly blurb?: string | null;
   readonly category: string | null;
   readonly price_cents: number | null;
+  /** Legacy/live-schema fallback storing major currency units. */
+  readonly price?: number | null;
   readonly currency?: string | null;
   readonly is_free?: boolean | null;
   readonly created_at: string | null;
@@ -207,7 +209,12 @@ function rowToCard(row: ListingRow): HustleCardData | null {
     title,
     blurb: pitchOf(row),
     category: normalizeFeedCategory(row.category),
-    priceCents: typeof row.price_cents === "number" && Number.isFinite(row.price_cents) ? Math.max(0, Math.round(row.price_cents)) : null,
+    priceCents:
+      typeof row.price_cents === "number" && Number.isFinite(row.price_cents)
+        ? Math.max(0, Math.round(row.price_cents))
+        : typeof row.price === "number" && Number.isFinite(row.price) && Number.isSafeInteger(Math.round(row.price * 100))
+          ? Math.max(0, Math.round(row.price * 100))
+          : null,
     currency: typeof row.currency === "string" && /^[A-Z]{3}$/.test(row.currency) ? row.currency : "USD",
     isFree: row.is_free === true,
     votesCount: typeof row.votes_count === "number" ? Math.max(0, row.votes_count) : 0,

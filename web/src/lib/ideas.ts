@@ -251,9 +251,21 @@ function validateBlurb(blurb: string, isConcept: boolean): string | null {
 function validatePrice(priceCents: number, isConcept: boolean): string | null {
   if (!Number.isFinite(priceCents)) return "Price must be a number.";
   if (priceCents < 0) return "Price cannot be negative.";
-  if (priceCents > 10_000_00) return "Price is unrealistically high (max $10,000).";
+  if (!Number.isSafeInteger(priceCents)) return "Price is too large or precise.";
   if (isConcept && priceCents === 0) return null;
   return null;
+}
+
+/** Parse major-unit input into minor units without binary floating-point math. */
+export function parsePriceInputToCents(value: string): number {
+  const normalized = value.trim().replace(/,/g, "");
+  if (!/^\d+(?:\.\d{0,2})?$/.test(normalized)) return Number.NaN;
+  const [whole = "0", fraction = ""] = normalized.split(".");
+  const wholeValue = Number(whole);
+  const centsValue = Number(`${fraction}00`.slice(0, 2));
+  if (!Number.isSafeInteger(wholeValue)) return Number.NaN;
+  const total = wholeValue * 100 + centsValue;
+  return Number.isSafeInteger(total) ? total : Number.NaN;
 }
 
 /** Errors for the fields belonging to a single wizard step. */

@@ -20,7 +20,16 @@ alter table public.listings add column if not exists description text;
 update public.listings set description = blurb where description is null and blurb is not null;
 
 -- 3) Price + contact + image columns used by the app.
-alter table public.listings add column if not exists price_cents integer not null default 0 check (price_cents >= 0);
+alter table public.listings add column if not exists price_cents bigint not null default 0 check (price_cents >= 0);
+do $$ begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'listings'
+      and column_name = 'price_cents' and data_type = 'integer'
+  ) then
+    alter table public.listings alter column price_cents type bigint using price_cents::bigint;
+  end if;
+end $$;
 alter table public.listings add column if not exists price numeric;
 update public.listings set price = price_cents / 100.0 where price is null;
 alter table public.listings add column if not exists contact_link text;

@@ -26,7 +26,7 @@ create table if not exists public.listings (
   title text not null check (char_length(title) between 3 and 80),
   blurb text not null check (char_length(blurb) <= 280),
   category text not null check (category in ('services','tech','campus','digital')),
-  price_cents integer not null default 0 check (price_cents >= 0),
+  price_cents bigint not null default 0 check (price_cents >= 0),
   image_url text,
   status text not null default 'active' check (status in ('draft','active','archived')),
   created_at timestamptz not null default now(),

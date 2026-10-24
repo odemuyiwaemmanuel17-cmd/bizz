@@ -51,20 +51,6 @@ export default function ValueProposition(): ReactElement {
         ))}
       </div>
 
-      <div id="validation" className="glass mt-16 flex flex-col items-center gap-6 rounded-3xl p-10 text-center sm:flex-row sm:text-left">
-        <div className="grid h-16 w-16 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-cyanGlow/30 to-indigoGlow/30 text-3xl">
-          ⚡
-        </div>
-        <div>
-          <h3 className="text-xl font-semibold">Validation votes are wired to the API</h3>
-          <p className="mt-2 text-sm text-slate-400">
-            <code className="rounded bg-black/40 px-1.5 py-0.5 text-cyanGlow">POST /api/votes</code>{" "}
-            submits or toggles a vote per user per listing, and{" "}
-            <code className="rounded bg-black/40 px-1.5 py-0.5 text-cyanGlow">GET /api/listings</code>{" "}
-            powers the discovery feed with pagination and category filters.
-          </p>
-        </div>
-      </div>
     </section>
   );
 }

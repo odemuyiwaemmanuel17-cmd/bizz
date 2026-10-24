@@ -31,6 +31,12 @@ test("formatPrice renders compact price tags", () => {
   assert.strictEqual(formatPrice(Number.NaN), "Free");
   assert.strictEqual(formatPrice(900, "EUR"), "\u20ac9");
   assert.strictEqual(formatPrice(900, "AUD"), "AUD 9");
+  assert.strictEqual(formatPrice(null, "NGN", false), "Price unavailable");
+  assert.strictEqual(
+    formatPrice(1500000, "NGN", false),
+    new Intl.NumberFormat(undefined, { style: "currency", currency: "NGN", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(15000),
+  );
+  assert.strictEqual(formatPrice(0, "NGN", true), "Free");
 });
 
 test("DEFAULT_PAGE_SIZE is sane for card grids", () => {

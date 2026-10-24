@@ -13,6 +13,7 @@ import CreatorProfilePage from "./pages/CreatorProfilePage";
 import CreatorProfileSetupPage from "./pages/CreatorProfileSetupPage";
 import CreatorProfileEditPage from "./pages/CreatorProfileEditPage";
 import CreatorVideoUploadPage from "./pages/CreatorVideoUploadPage";
+import MyVideosPage from "./pages/MyVideosPage";
 import SavedVideosPage from "./pages/SavedVideosPage";
 import ListingDetailPage from "./pages/ListingDetailPage";
 
@@ -35,6 +36,7 @@ export default function AppRoutes(): ReactElement {
         <Route path="/dashboard/profile/setup" element={<CreatorProfileSetupPage />} />
         <Route path="/dashboard/profile/edit" element={<CreatorProfileEditPage />} />
         <Route path="/dashboard/video/upload" element={<CreatorVideoUploadPage />} />
+        <Route path="/dashboard/videos" element={<MyVideosPage />} />
         <Route path="/dashboard/saved-videos" element={<SavedVideosPage />} />
         <Route path="/auth" element={<AuthPage />} />
         <Route path="/@:username" element={<CreatorProfilePage />} />

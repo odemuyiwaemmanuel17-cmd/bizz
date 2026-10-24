@@ -5,7 +5,7 @@ import { formatPrice, CATEGORY_TABS, type FeedCategory } from "../../lib/feed";
 import { normalizeContactLink } from "../../lib/contact";
 import { VALIDATION_THRESHOLD_BIZZ } from "../../lib/ideas";
 import { useToast, type ToastApi, type ToastInput } from "../ui/Toaster";
-import { SUPPORTED_CURRENCIES, type PublishedListing } from "../../lib/ideas";
+import { parsePriceInputToCents, SUPPORTED_CURRENCIES, type PublishedListing } from "../../lib/ideas";
 
 interface PostBizzModalProps {
   readonly open: boolean;
@@ -14,6 +14,13 @@ interface PostBizzModalProps {
 
 const inputClass =
   "w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white placeholder-slate-500 outline-none transition focus:border-cyanGlow/60 focus:bg-white/10";
+
+function priceInputValue(priceCents: number, isFree: boolean): string {
+  if (isFree || !Number.isSafeInteger(priceCents) || priceCents < 0) return "";
+  const whole = Math.floor(priceCents / 100);
+  const fraction = String(priceCents % 100).padStart(2, "0");
+  return `${whole}.${fraction}`;
+}
 
 /** Announces publish success once per published listing (guarded by ref id). */
 function usePublishAnnouncement(
@@ -99,7 +106,7 @@ export default function PostBizzModal({ open, onClose }: PostBizzModalProps): Re
 
   const { stepIndex, steps, draft, errors, image, imageError, uploading, uploadPercent, submitting, submitError, published } = wizard;
   const needsAuth: boolean = !auth.isAuthenticated && auth.status !== "config-missing";
-  const priceDollars: string = draft.priceCents > 0 ? (draft.priceCents / 100).toFixed(2) : "";
+  const priceDollars: string = priceInputValue(draft.priceCents, draft.isFree);
 
   const handleClose = (): void => {
     wizard.reset();
@@ -265,16 +272,14 @@ export default function PostBizzModal({ open, onClose }: PostBizzModalProps): Re
                           id="bizz-price"
                           type="number"
                           min={0}
-                          max={10000}
-                           step={0.5}
+                            step={0.01}
                            disabled={draft.isFree}
                           inputMode="decimal"
                            className={`${inputClass} pl-24`}
                           placeholder="0.00"
                            value={priceDollars}
                           onChange={(event) => {
-                             const parsed: number = Number.parseFloat(event.target.value);
-                             wizard.updateDraft({ priceCents: Number.isFinite(parsed) ? Math.round(parsed * 100) : Number.NaN, isFree: false });
+                              wizard.updateDraft({ priceCents: parsePriceInputToCents(event.target.value), isFree: false });
                           }}
                         />
                       </div>
