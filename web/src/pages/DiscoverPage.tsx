@@ -8,6 +8,7 @@ import { getSupabase } from "../lib/supabase";
 import { creatorProfilePath } from "../lib/creator";
 import { fetchFollowingCreatorIds } from "../lib/social";
 import { useAuth } from "../hooks/useAuth";
+import MarketplaceSearchPanel from "../components/discover/MarketplaceSearchPanel";
 
 interface CreatorResult {
   readonly id: string;
@@ -87,6 +88,7 @@ export default function DiscoverPage(): ReactElement {
           Watch creators, explore Bizzes, and find the people building useful businesses around you.
         </p>
       </header>
+      <MarketplaceSearchPanel />
       <div role="tablist" aria-label="Discovery modes" className="mb-6 flex max-w-xl gap-2 overflow-x-auto rounded-2xl bg-white/5 p-1">
         {(["videos", "bizzes", "creators", "following"] as const).map((item) => <button key={item} type="button" role="tab" aria-selected={mode === item} onClick={() => setMode(item)} className={`rounded-xl px-4 py-2 text-sm font-semibold capitalize ${mode === item ? "bg-violet-500 text-white" : "text-slate-400 hover:text-white"}`}>{item === "videos" ? "Videos" : item === "bizzes" ? "Bizzes" : item === "creators" ? "Creators" : "Following"}</button>)}
       </div>

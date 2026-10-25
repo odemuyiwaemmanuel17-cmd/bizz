@@ -121,7 +121,7 @@ export function CreatorDashboard() {
           {dash.loading ? "Refreshing…" : "↻ Refresh"}
         </button>
       </div>
-       <div className="mt-5 flex flex-wrap gap-2"><Link to="/dashboard/analytics" className="btn-primary px-4 py-2 text-sm">Analytics</Link><Link to="/dashboard/profile/edit" className="btn-glass px-4 py-2 text-sm">My Profile</Link><Link to="/dashboard/verification" className="btn-glass px-4 py-2 text-sm">Verification</Link><Link to="/dashboard/videos" className="btn-glass px-4 py-2 text-sm">My Videos</Link><Link to="/dashboard/saved-videos" className="btn-glass px-4 py-2 text-sm">Saved Videos</Link><Link to="/discover?mode=bizzes" className="btn-glass px-4 py-2 text-sm">My Bizzes</Link></div>
+       <div className="mt-5 flex flex-wrap gap-2"><Link to="/dashboard/analytics" className="btn-primary px-4 py-2 text-sm">Analytics</Link><Link to="/dashboard/profile/edit" className="btn-glass px-4 py-2 text-sm">My Profile</Link><Link to="/dashboard/verification" className="btn-glass px-4 py-2 text-sm">Verification</Link><Link to="/dashboard/promotions" className="btn-glass px-4 py-2 text-sm">Promotions</Link><Link to="/dashboard/videos" className="btn-glass px-4 py-2 text-sm">My Videos</Link><Link to="/dashboard/saved-videos" className="btn-glass px-4 py-2 text-sm">Saved Videos</Link><Link to="/discover?mode=bizzes" className="btn-glass px-4 py-2 text-sm">My Bizzes</Link></div>
 
       {dash.error !== null && (
         <p className="mt-4 rounded-xl border border-rose-400/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
