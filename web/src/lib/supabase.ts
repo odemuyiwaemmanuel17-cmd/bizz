@@ -237,7 +237,7 @@ export async function signInWithPassword(email: string, password: string): Promi
 }
 
 /** Google OAuth redirect flow. On success the browser navigates away; errors resolve typed. */
-export async function signInWithGoogle(): Promise<AuthResult> {
+export async function signInWithGoogle(returnPath = "/dashboard"): Promise<AuthResult> {
   const sb: SupabaseClient | null = getSupabase();
   if (sb === null) {
     return { ok: false, message: "Supabase is not configured yet (missing VITE_SUPABASE_* variables)." };
@@ -245,7 +245,7 @@ export async function signInWithGoogle(): Promise<AuthResult> {
   try {
     const { error } = await sb.auth.signInWithOAuth({
       provider: "google",
-      options: { redirectTo: window.location.origin + "/dashboard" },
+      options: { redirectTo: window.location.origin + returnPath },
     });
     if (error !== null) return { ok: false, message: error.message };
     return { ok: true }; // redirect in flight

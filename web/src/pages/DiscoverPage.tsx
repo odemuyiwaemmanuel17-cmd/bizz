@@ -6,6 +6,8 @@ import VideosPage from "./VideosPage";
 import { Link } from "react-router-dom";
 import { getSupabase } from "../lib/supabase";
 import { creatorProfilePath } from "../lib/creator";
+import { fetchFollowingCreatorIds } from "../lib/social";
+import { useAuth } from "../hooks/useAuth";
 
 interface CreatorResult {
   readonly id: string;
@@ -73,7 +75,10 @@ function CreatorDiscovery(): ReactElement {
 
 export default function DiscoverPage(): ReactElement {
   const [searchParams] = useSearchParams();
-  const [mode, setMode] = useState<"videos" | "bizzes" | "creators">(searchParams.get("mode") === "bizzes" ? "bizzes" : searchParams.get("mode") === "creators" ? "creators" : "videos");
+  const [mode, setMode] = useState<"videos" | "bizzes" | "creators" | "following">(searchParams.get("mode") === "bizzes" ? "bizzes" : searchParams.get("mode") === "creators" ? "creators" : searchParams.get("mode") === "following" ? "following" : "videos");
+  const { isAuthenticated } = useAuth();
+  const [followingIds, setFollowingIds] = useState<string[] | null>(null);
+  useEffect(() => { if (mode !== "following" || !isAuthenticated) { setFollowingIds(null); return; } let active = true; void fetchFollowingCreatorIds().then((ids) => { if (active) setFollowingIds(ids); }).catch(() => { if (active) setFollowingIds([]); }); return () => { active = false; }; }, [isAuthenticated, mode]);
   return (
     <div className="mx-auto max-w-6xl px-4 pb-16 pt-28 sm:px-6">
       <header className="mb-6">
@@ -83,9 +88,10 @@ export default function DiscoverPage(): ReactElement {
         </p>
       </header>
       <div role="tablist" aria-label="Discovery modes" className="mb-6 flex max-w-xl gap-2 overflow-x-auto rounded-2xl bg-white/5 p-1">
-        {(["videos", "bizzes", "creators"] as const).map((item) => <button key={item} type="button" role="tab" aria-selected={mode === item} onClick={() => setMode(item)} className={`rounded-xl px-4 py-2 text-sm font-semibold capitalize ${mode === item ? "bg-violet-500 text-white" : "text-slate-400 hover:text-white"}`}>{item === "videos" ? "Videos" : item === "bizzes" ? "Bizzes" : "Creators"}</button>)}
+        {(["videos", "bizzes", "creators", "following"] as const).map((item) => <button key={item} type="button" role="tab" aria-selected={mode === item} onClick={() => setMode(item)} className={`rounded-xl px-4 py-2 text-sm font-semibold capitalize ${mode === item ? "bg-violet-500 text-white" : "text-slate-400 hover:text-white"}`}>{item === "videos" ? "Videos" : item === "bizzes" ? "Bizzes" : item === "creators" ? "Creators" : "Following"}</button>)}
       </div>
       {mode === "videos" && <VideosPage />}
+      {mode === "following" && (isAuthenticated ? <VideosPage creatorIds={followingIds ?? []} followingMode /> : <section className="glass rounded-3xl p-8 text-center"><h2 className="text-xl font-bold text-white">Your Following feed</h2><p className="mt-2 text-sm text-slate-400">Sign in to see videos from creators you follow.</p><Link to={`/auth?next=${encodeURIComponent("/discover?mode=following")}`} className="btn-primary mt-5 inline-block">Sign in</Link></section>)}
       {mode === "bizzes" && <HustleFeed />}
        {mode === "creators" && <CreatorDiscovery />}
     </div>

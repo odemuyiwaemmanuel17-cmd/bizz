@@ -21,21 +21,22 @@ export interface VideoFeedResult {
 
 const PAGE_SIZE = 8;
 
-export async function fetchPublicVideos(page: number): Promise<VideoFeedResult> {
+export async function fetchPublicVideos(page: number, creatorIds?: ReadonlyArray<string>): Promise<VideoFeedResult> {
   const sb: SupabaseClient | null = getSupabase();
   if (sb === null) return { items: [], hasMore: false, error: "Supabase is not configured." };
   const from = Math.max(0, page) * PAGE_SIZE;
   try {
-    const result = await sb.from("creator_videos")
+    let query = sb.from("creator_videos")
       .select("id,user_id,video_url,caption,created_at,status,listing_id", { count: "exact" })
       .eq("status", "published")
       .not("video_url", "is", null)
-      .order("created_at", { ascending: false })
-      .range(from, from + PAGE_SIZE - 1);
+      .order("created_at", { ascending: false });
+    if (creatorIds !== undefined) query = creatorIds.length === 0 ? query.eq("user_id", "00000000-0000-0000-0000-000000000000") : query.in("user_id", creatorIds);
+    const result = await query.range(from, from + PAGE_SIZE - 1);
     if (result.error !== null) return { items: [], hasMore: false, error: result.error.message };
     const rows = (result.data ?? []) as Array<{ id: string; user_id: string; video_url: string; caption: string | null; created_at: string; status: string; listing_id: string | null }>;
-    const creatorIds = Array.from(new Set(rows.map((row) => row.user_id).filter(Boolean)));
-    const profiles = creatorIds.length === 0 ? { data: [], error: null } : await sb.from("profiles").select("id,username,display_name,full_name,avatar_url").in("id", creatorIds);
+    const rowCreatorIds = Array.from(new Set(rows.map((row) => row.user_id).filter(Boolean)));
+    const profiles = rowCreatorIds.length === 0 ? { data: [], error: null } : await sb.from("profiles").select("id,username,display_name,full_name,avatar_url").in("id", rowCreatorIds);
     const byId = new Map<string, { username: string | null; display_name: string | null; full_name: string | null; avatar_url: string | null }>();
     for (const profile of (profiles.data ?? []) as Array<{ id: string; username?: string | null; display_name?: string | null; full_name?: string | null; avatar_url?: string | null }>) byId.set(profile.id, { username: profile.username ?? null, display_name: profile.display_name ?? null, full_name: profile.full_name ?? null, avatar_url: profile.avatar_url ?? null });
     const listingIds = Array.from(new Set(rows.map((row) => row.listing_id).filter((id): id is string => typeof id === "string" && id.length > 0)));

@@ -1,9 +1,10 @@
 /** `/auth` — dedicated sign-in / sign-up view (email+password & Google OAuth). */
 import { useEffect, useState, type FormEvent, type ReactElement } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { isSupabaseConfigured } from "../lib/supabase";
 import { useToast } from "../components/ui/Toaster";
+import { safeAuthReturnPath } from "../lib/authRedirect";
 
 type Mode = "signin" | "signup";
 
@@ -23,8 +24,10 @@ function GoogleIcon(): ReactElement {
 
 export default function AuthPage(): ReactElement {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const toast = useToast();
   const { isAuthenticated, status, signInPassword, signUp, signInGoogle } = useAuth();
+  const returnPath = safeAuthReturnPath(searchParams.get("next"));
   const [mode, setMode] = useState<Mode>("signin");
   const [email, setEmail] = useState<string>("");
   const [password, setPassword] = useState<string>("");
@@ -45,8 +48,8 @@ export default function AuthPage(): ReactElement {
 
   // Already signed in? Straight to the dashboard.
   useEffect(() => {
-    if (isAuthenticated) navigate("/dashboard", { replace: true });
-  }, [isAuthenticated, navigate]);
+    if (isAuthenticated) navigate(returnPath, { replace: true });
+  }, [isAuthenticated, navigate, returnPath]);
 
   const configured: boolean = isSupabaseConfigured() || status === "authenticated";
 
@@ -80,7 +83,7 @@ export default function AuthPage(): ReactElement {
         });
         setMode("signin");
       } else {
-        navigate("/dashboard", { replace: true });
+        navigate(returnPath, { replace: true });
       }
     } finally {
       setBusy(false);
@@ -91,7 +94,7 @@ export default function AuthPage(): ReactElement {
     setError(null);
     setBusy(true);
     try {
-      const result = await signInGoogle();
+      const result = await signInGoogle(returnPath);
       if (!result.ok) {
         setError(typeof result.message === "string" && result.message.length > 0
           ? result.message

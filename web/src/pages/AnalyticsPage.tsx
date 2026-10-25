@@ -38,6 +38,21 @@ export default function AnalyticsPage(): ReactElement {
   const [data, setData] = useState<CreatorAnalytics>(EMPTY);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [checkingAuth, setCheckingAuth] = useState(true);
+
+  useEffect(() => {
+    if (status === "config-missing" || isAuthenticated) {
+      setCheckingAuth(false);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      if (!isAuthenticated) {
+        navigate(`/auth?next=${encodeURIComponent("/dashboard/analytics")}`, { replace: true });
+      }
+      setCheckingAuth(false);
+    }, 1200);
+    return () => window.clearTimeout(timer);
+  }, [isAuthenticated, navigate, status]);
 
   useEffect(() => {
     if (user === null) {
@@ -56,8 +71,8 @@ export default function AnalyticsPage(): ReactElement {
     return () => { active = false; };
   }, [range, status, user]);
 
-  if (status !== "config-missing" && !isAuthenticated && user === null) {
-    return <main className="mx-auto max-w-xl px-4 pb-20 pt-32 text-center"><section className="glass rounded-3xl p-8"><h1 className="text-xl font-bold text-white">Creator analytics 🔒</h1><p className="mt-2 text-sm text-slate-400">Sign in to view private performance metrics for your own content.</p><Link to="/auth" className="btn-primary mt-5 inline-block">Go to sign in</Link></section></main>;
+  if (status !== "config-missing" && (!isAuthenticated || user === null)) {
+    return <main className="mx-auto max-w-xl px-4 pb-20 pt-32 text-center"><section className="glass rounded-3xl p-8"><h1 className="text-xl font-bold text-white">Creator analytics 🔒</h1><p className="mt-2 text-sm text-slate-400">{checkingAuth ? "Checking your session…" : "Sign in to view private performance metrics for your own content."}</p>{!checkingAuth && <Link to={`/auth?next=${encodeURIComponent("/dashboard/analytics")}`} className="btn-primary mt-5 inline-block">Go to sign in</Link>}</section></main>;
   }
 
   if (status === "config-missing") {

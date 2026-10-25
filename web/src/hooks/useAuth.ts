@@ -20,7 +20,7 @@ export interface UseAuthResult {
   readonly signIn: (email: string) => Promise<AuthResult>;
   readonly signInPassword: (email: string, password: string) => Promise<AuthResult>;
   readonly signUp: (email: string, password: string) => Promise<AuthResult>;
-  readonly signInGoogle: () => Promise<AuthResult>;
+  readonly signInGoogle: (returnPath?: string) => Promise<AuthResult>;
   readonly signOut: () => Promise<void>;
 }
 
@@ -59,7 +59,7 @@ export function useAuth(): UseAuthResult {
     [],
   );
 
-  const signInGoogle = useCallback(() => signInWithGoogle(), []);
+  const signInGoogle = useCallback((returnPath?: string) => signInWithGoogle(returnPath), []);
 
   const signOut = useCallback(async (): Promise<void> => {
     const next: AuthSnapshot = await sbSignOut();
