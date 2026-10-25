@@ -5,6 +5,7 @@ import { fetchFollowState, toggleCreatorFollow } from "../lib/social";
 import { useAuth } from "../hooks/useAuth";
 import { formatPrice, priceCentsFromMajorValue, priceCentsFromValue } from "../lib/feed";
 import { normalizeProfileUsername } from "../lib/creator";
+import { trackAnalyticsEvent } from "../lib/analytics";
 
 interface Profile { id: string; username: string; display_name: string | null; bio: string | null; avatar_url: string | null; campus: string | null; state: string | null; country: string | null; creator_type: string | null; is_verified: boolean | null; }
 interface Video { id: string; video_url: string; caption: string | null; status: "published"; }
@@ -42,7 +43,7 @@ export default function CreatorProfilePage(): ReactElement {
         ]);
         const relatedError = videoResult.error ?? listingResult.error ?? ideaResult.error;
         if (relatedError !== null) throw new Error(relatedError.message);
-        if (active) { setProfile(row); setVideos((videoResult.data as Video[] | null) ?? []); setListings((listingResult.data as Item[] | null) ?? []); setIdeas((ideaResult.data as Item[] | null) ?? []); }
+        if (active) { setProfile(row); setVideos((videoResult.data as Video[] | null) ?? []); setListings((listingResult.data as Item[] | null) ?? []); setIdeas((ideaResult.data as Item[] | null) ?? []); void trackAnalyticsEvent({ event: "profile_view", profileId: row.id, dedupeId: row.id }); }
         const follow = await fetchFollowState(row.id); if (active) { setFollowers(follow.followers); setFollowingCount(follow.followingCount); setFollowing(follow.following); }
       } catch (err) { if (active) setError(err instanceof Error ? err.message : "Profile could not be loaded."); }
       finally { if (active) setLoading(false); }

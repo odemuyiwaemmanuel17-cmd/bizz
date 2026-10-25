@@ -7,9 +7,11 @@ import {
   resolveContactHref,
   type ContactChannel,
 } from "../../lib/contact";
+import { trackAnalyticsEvent } from "../../lib/analytics";
 
 interface ChatWithCreatorProps {
   readonly listingTitle: string;
+  readonly listingId?: string | null;
   /** Canonical listings.contact_link value (source of truth). */
   readonly contactLink?: string | null;
   /** Legacy profile-based handle (fallback only). */
@@ -30,6 +32,7 @@ const CHANNEL_META: Readonly<Record<ContactChannel, { label: string; icon: strin
  */
 export default function ChatWithCreator({
   listingTitle,
+  listingId = null,
   contactLink,
   channel = "whatsapp",
   handle = "",
@@ -48,6 +51,7 @@ export default function ChatWithCreator({
       resolvedHref ?? createChatHref(effectiveChannel, handle, defaultMessage(listingTitle));
     if (url === null) return;
     window.open(url, "_blank", "noopener,noreferrer");
+    if (listingId !== null) void trackAnalyticsEvent({ event: "contact_click", listingId, dedupeId: listingId });
     setOpened(true);
   };
 

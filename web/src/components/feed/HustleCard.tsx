@@ -127,6 +127,7 @@ export default function HustleCard({ card, isLiked = false, likeCount = 0 }: Hus
         </div>
         <ChatWithCreator
           listingTitle={card.title}
+          listingId={card.id}
           contactLink={card.contactLink}
           channel={card.contactChannel}
           handle={card.contactHandle}

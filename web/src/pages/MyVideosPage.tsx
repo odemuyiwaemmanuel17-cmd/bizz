@@ -127,7 +127,7 @@ export default function MyVideosPage(): ReactElement {
       {!loading && error === null && videos.length > 0 && (
         <div className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
           {videos.map((video) => (
-            <article key={video.id} className="overflow-hidden rounded-3xl border border-white/10 bg-white/5">
+            <article id={`video-${video.id}`} key={video.id} className="overflow-hidden rounded-3xl border border-white/10 bg-white/5">
               {video.video_url !== null && <video controls playsInline preload="metadata" src={video.video_url} className="aspect-video w-full bg-black object-contain" />}
               <div className="p-4">
                 <p className="text-xs text-slate-500">Published {new Date(video.created_at).toLocaleDateString()}</p>
