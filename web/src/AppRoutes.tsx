@@ -19,6 +19,8 @@ import ListingDetailPage from "./pages/ListingDetailPage";
 import AnalyticsPage from "./pages/AnalyticsPage";
 import VerificationRequestPage from "./pages/VerificationRequestPage";
 import PromotionRequestsPage from "./pages/PromotionRequestsPage";
+import AdminVerificationQueuePage from "./pages/AdminVerificationQueuePage";
+import AdminVerificationReviewPage from "./pages/AdminVerificationReviewPage";
 
 export default function AppRoutes(): ReactElement {
   const [postOpen, setPostOpen] = useState<boolean>(false);
@@ -43,7 +45,9 @@ export default function AppRoutes(): ReactElement {
         <Route path="/dashboard/saved-videos" element={<SavedVideosPage />} />
          <Route path="/dashboard/analytics" element={<AnalyticsPage />} />
          <Route path="/dashboard/verification" element={<VerificationRequestPage />} />
-         <Route path="/dashboard/promotions" element={<PromotionRequestsPage />} />
+          <Route path="/dashboard/promotions" element={<PromotionRequestsPage />} />
+          <Route path="/admin/verification" element={<AdminVerificationQueuePage />} />
+          <Route path="/admin/verification/:requestId" element={<AdminVerificationReviewPage />} />
         <Route path="/auth" element={<AuthPage />} />
         {/* React Router treats `@:username` as a literal path segment. Match the
             complete segment and let CreatorProfilePage normalize the leading @. */}
