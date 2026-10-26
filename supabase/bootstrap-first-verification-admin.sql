@@ -12,6 +12,28 @@
 
 begin;
 
+-- Core authorization objects are repeated here so this bootstrap can be run
+-- safely even when the full admin migration has not yet been applied. The
+-- full creator-verification-admin-migration.sql is still required for the
+-- verification queue, review functions, audit trail, and private evidence.
+create table if not exists public.verification_admins (
+  user_id uuid primary key references public.profiles(id) on delete cascade,
+  granted_by uuid references public.profiles(id) on delete set null,
+  granted_at timestamptz not null default now(),
+  revoked_at timestamptz
+);
+alter table public.verification_admins enable row level security;
+
+create or replace function public.is_verification_admin()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as 'select exists (select 1 from public.verification_admins where user_id = auth.uid() and revoked_at is null)';
+revoke all on function public.is_verification_admin() from public;
+grant execute on function public.is_verification_admin() to authenticated;
+
 -- Replace the value between the quotes with your exact Auth User UID.
 drop table if exists pg_temp.hustlehub_bootstrap_target;
 create temporary table hustlehub_bootstrap_target (
