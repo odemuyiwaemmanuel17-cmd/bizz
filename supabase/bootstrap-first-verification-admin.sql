@@ -1,55 +1,69 @@
 -- HustleHub first verification administrator bootstrap.
 --
--- SAFETY:
---   * Replace only the placeholder below with the exact UUID from
---     Supabase Dashboard -> Authentication -> Users -> User UID.
---   * Run this in the Supabase SQL Editor as the project owner/postgres role,
---     never from the browser and never with the anon key.
---   * The block aborts if another active verification administrator already
---     exists, so it cannot silently grant a second account administrator
---     access. Re-running it for the same account is safe and idempotent.
+-- BEFORE RUNNING:
+-- 1. In Supabase Dashboard, open Authentication -> Users.
+-- 2. Copy the exact User UID for your existing HustleHub account.
+-- 3. Replace ONLY the value below with that UUID.
+-- 4. Paste this complete file into a NEW Supabase SQL Editor query.
+--
+-- This version intentionally uses plain SQL only. It does not use DO blocks,
+-- dollar-quoted strings, browser email values, profile metadata, or a service
+-- role key. It is safe to run again for the same account.
 
 begin;
 
-do $bootstrap$
-declare
-  target_text text := 'REPLACE_WITH_EXACT_SUPABASE_AUTH_USER_UUID';
-  target_id uuid;
-begin
-  if target_text = 'REPLACE_WITH_EXACT_SUPABASE_AUTH_USER_UUID' then
-    raise exception 'Replace target_text with the exact Supabase Auth user UUID before running this bootstrap.';
-  end if;
+-- Replace the value between the quotes with your exact Auth User UID.
+drop table if exists pg_temp.hustlehub_bootstrap_target;
+create temporary table hustlehub_bootstrap_target (
+  user_id uuid not null
+);
 
-  begin
-    target_id := target_text::uuid;
-  exception when invalid_text_representation then
-    raise exception 'The configured administrator ID is not a valid UUID: %', target_text;
-  end;
+insert into hustlehub_bootstrap_target (user_id)
+values ('REPLACE_WITH_EXACT_SUPABASE_AUTH_USER_UUID'::uuid);
 
-  if not exists (select 1 from auth.users where id = target_id) then
-    raise exception 'No Supabase Auth user exists with ID %.', target_id;
-  end if;
-
-  if not exists (select 1 from public.profiles where id = target_id) then
-    raise exception 'The Auth user has no public.profiles row. Sign in once to HustleHub, then run this bootstrap again.';
-  end if;
-
-  if exists (
-    select 1
-    from public.verification_admins
-    where revoked_at is null
-      and user_id <> target_id
-  ) then
-    raise exception 'An active verification administrator already exists. Review the existing grant before changing administrators.';
-  end if;
-
-  insert into public.verification_admins (user_id, granted_by, revoked_at)
-  values (target_id, null, null)
-  on conflict (user_id) do update
-    set revoked_at = null;
-
-  raise notice 'Verification administrator authorized for Auth user %.', target_id;
-end
-$bootstrap$;
+-- This inserts only when the Auth user and profile exist and no different
+-- active administrator is already present. The final query explains a no-op.
+insert into public.verification_admins (user_id, granted_by, revoked_at)
+select target.user_id, null, null
+from hustlehub_bootstrap_target target
+where exists (
+  select 1
+  from auth.users auth_user
+  where auth_user.id = target.user_id
+)
+and exists (
+  select 1
+  from public.profiles profile_row
+  where profile_row.id = target.user_id
+)
+and not exists (
+  select 1
+  from public.verification_admins existing_admin
+  where existing_admin.revoked_at is null
+    and existing_admin.user_id <> target.user_id
+)
+on conflict (user_id) do update
+set revoked_at = null;
 
 commit;
+
+-- This result never exposes credentials. It should show three true values.
+select
+  target.user_id,
+  exists (
+    select 1
+    from auth.users auth_user
+    where auth_user.id = target.user_id
+  ) as auth_user_exists,
+  exists (
+    select 1
+    from public.profiles profile_row
+    where profile_row.id = target.user_id
+  ) as profile_exists,
+  exists (
+    select 1
+    from public.verification_admins admin_row
+    where admin_row.user_id = target.user_id
+      and admin_row.revoked_at is null
+  ) as active_admin_grant
+from hustlehub_bootstrap_target target;
