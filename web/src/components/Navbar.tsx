@@ -3,7 +3,6 @@ import { useLocation } from "react-router-dom";
 import { Link } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { useToast } from "./ui/Toaster";
-import { isCurrentVerificationAdmin } from "../lib/verification";
 
 interface NavbarProps {
   readonly onPostBizzClick?: () => void;
@@ -23,27 +22,9 @@ function isActive(pathname: string, to: string): boolean {
 
 export default function Navbar({ onPostBizzClick }: NavbarProps): ReactElement {
   const { isAuthenticated, user, signOut } = useAuth();
-  const [isVerificationAdmin, setIsVerificationAdmin] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
   const toast = useToast();
   const location = useLocation();
-
-  useEffect(() => {
-    if (!isAuthenticated) {
-      setIsVerificationAdmin(false);
-      return;
-    }
-    let active = true;
-    void isCurrentVerificationAdmin()
-      .then((allowed) => {
-        if (active) setIsVerificationAdmin(allowed);
-      })
-      .catch(() => {
-        if (active) setIsVerificationAdmin(false);
-      });
-    return () => {
-      active = false;
-    };
-  }, [isAuthenticated]);
 
   // Scroll to top whenever the route changes (multi-page UX).
   useEffect(() => {
@@ -51,6 +32,7 @@ export default function Navbar({ onPostBizzClick }: NavbarProps): ReactElement {
   }, [location.pathname]);
 
   function handleSignOut(): void {
+    setAccountOpen(false);
     void signOut();
     toast.push({ title: "Signed out", description: "Your drafts stay put — see you soon 👋", tone: "info" });
   }
@@ -80,18 +62,14 @@ export default function Navbar({ onPostBizzClick }: NavbarProps): ReactElement {
 
         <div className="flex flex-1 items-center justify-end gap-2 sm:gap-3">
           {isAuthenticated ? (
-            <>
-              {isVerificationAdmin && <Link to="/admin/verification" className="hidden rounded-xl border border-cyan-300/30 bg-cyan-300/10 px-3 py-2 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-300/20 sm:inline">Admin</Link>}
-              <span className="hidden max-w-[180px] truncate text-sm text-slate-300 sm:inline">
-                {user?.email ?? "Signed in"}
-              </span>
-              <button
-                onClick={handleSignOut}
-                className="rounded-xl border border-white/15 px-3 py-2 text-sm transition hover:bg-white/10 active:scale-[0.97] sm:px-4"
-              >
-                Sign out
+            <div className="relative">
+              <button type="button" onClick={() => setAccountOpen((open) => !open)} aria-expanded={accountOpen} aria-haspopup="menu" className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-200 transition hover:bg-white/10">
+                <span className="grid h-6 w-6 place-items-center rounded-lg bg-gradient-to-br from-indigoGlow/60 to-violetGlow/70 text-xs font-bold text-white">{(user?.email?.charAt(0) ?? "A").toUpperCase()}</span>
+                <span className="hidden max-w-[120px] truncate sm:inline">{user?.email ?? "Account"}</span>
+                <span aria-hidden="true" className="text-xs text-slate-500">{accountOpen ? "▲" : "▼"}</span>
               </button>
-            </>
+              {accountOpen && <div role="menu" className="absolute right-0 top-12 z-50 w-52 rounded-2xl border border-white/10 bg-slate-950/95 p-2 shadow-2xl shadow-black/40 backdrop-blur-xl"><p className="truncate px-3 py-2 text-xs text-slate-500">{user?.email ?? "Signed in"}</p><Link role="menuitem" onClick={() => setAccountOpen(false)} to="/dashboard" className="block rounded-xl px-3 py-2 text-sm text-slate-300 hover:bg-white/10 hover:text-white">Dashboard</Link><Link role="menuitem" onClick={() => setAccountOpen(false)} to="/dashboard/profile/edit" className="block rounded-xl px-3 py-2 text-sm text-slate-300 hover:bg-white/10 hover:text-white">Account & profile</Link><Link role="menuitem" onClick={() => setAccountOpen(false)} to="/dashboard/verification" className="block rounded-xl px-3 py-2 text-sm text-slate-300 hover:bg-white/10 hover:text-white">Verification</Link><button role="menuitem" type="button" onClick={handleSignOut} className="mt-1 w-full rounded-xl border-t border-white/10 px-3 py-2 text-left text-sm text-slate-400 hover:bg-white/10 hover:text-white">Sign out</button></div>}
+            </div>
           ) : (
             <Link
               to="/auth"

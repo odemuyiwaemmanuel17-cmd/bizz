@@ -51,16 +51,5 @@ export default function DashboardPage(): ReactElement {
     );
   }
 
-  return (
-    <div className="pt-24">
-      {/* Page header — the big "Sign out & clear session" button was removed;
-          creator identity + profile controls now live at the top of the
-          dashboard (see CreatorHeader). Sign out remains in the navbar, and
-          Profile → Account still offers a full session clear. */}
-      <div className="mx-auto flex w-full max-w-5xl flex-wrap items-center justify-between gap-3 px-4 sm:px-6">
-        <h1 className="text-3xl font-black tracking-tight text-white">Dashboard</h1>
-      </div>
-      <CreatorDashboard />
-    </div>
-  );
+  return <div className="pt-28"><CreatorDashboard /></div>;
 }
