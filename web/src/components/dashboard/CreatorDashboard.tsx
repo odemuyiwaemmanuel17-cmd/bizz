@@ -1,11 +1,12 @@
 /** Creator dashboard: identity header + stats cards + lists of the user's bizzes & concepts. */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useCreatorDashboard } from "../../hooks/useCreatorDashboard";
 import { CreatorHeader } from "./CreatorHeader";
 import { formatPrice, type FeedCategory } from "../../lib/feed";
 import { isValidated } from "../../lib/ideas";
 import type { DashboardIdea, DashboardListing } from "../../lib/dashboard";
 import { Link } from "react-router-dom";
+import { isCurrentVerificationAdmin } from "../../lib/verification";
 
 const CATEGORY_LABELS: Readonly<Partial<Record<FeedCategory, string>>> = Object.freeze({
   services: "Services",
@@ -87,6 +88,25 @@ type DashTab = "gigs" | "concepts";
 export function CreatorDashboard() {
   const dash = useCreatorDashboard();
   const [tab, setTab] = useState<DashTab>("gigs");
+  const [isVerificationAdmin, setIsVerificationAdmin] = useState(false);
+
+  useEffect(() => {
+    if (!dash.isAuthenticated) {
+      setIsVerificationAdmin(false);
+      return;
+    }
+    let active = true;
+    void isCurrentVerificationAdmin()
+      .then((allowed) => {
+        if (active) setIsVerificationAdmin(allowed);
+      })
+      .catch(() => {
+        if (active) setIsVerificationAdmin(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [dash.isAuthenticated]);
 
   if (!dash.isAuthenticated) {
     return (
@@ -121,7 +141,7 @@ export function CreatorDashboard() {
           {dash.loading ? "Refreshing…" : "↻ Refresh"}
         </button>
       </div>
-       <div className="mt-5 flex flex-wrap gap-2"><Link to="/dashboard/analytics" className="btn-primary px-4 py-2 text-sm">Analytics</Link><Link to="/dashboard/profile/edit" className="btn-glass px-4 py-2 text-sm">My Profile</Link><Link to="/dashboard/verification" className="btn-glass px-4 py-2 text-sm">Verification</Link><Link to="/dashboard/promotions" className="btn-glass px-4 py-2 text-sm">Promotions</Link><Link to="/dashboard/videos" className="btn-glass px-4 py-2 text-sm">My Videos</Link><Link to="/dashboard/saved-videos" className="btn-glass px-4 py-2 text-sm">Saved Videos</Link><Link to="/discover?mode=bizzes" className="btn-glass px-4 py-2 text-sm">My Bizzes</Link></div>
+       <div className="mt-5 flex flex-wrap gap-2"><Link to="/dashboard/analytics" className="btn-primary px-4 py-2 text-sm">Analytics</Link><Link to="/dashboard/profile/edit" className="btn-glass px-4 py-2 text-sm">My Profile</Link><Link to="/dashboard/verification" className="btn-glass px-4 py-2 text-sm">Verification</Link><Link to="/dashboard/promotions" className="btn-glass px-4 py-2 text-sm">Promotions</Link><Link to="/dashboard/videos" className="btn-glass px-4 py-2 text-sm">My Videos</Link><Link to="/dashboard/saved-videos" className="btn-glass px-4 py-2 text-sm">Saved Videos</Link><Link to="/discover?mode=bizzes" className="btn-glass px-4 py-2 text-sm">My Bizzes</Link>{isVerificationAdmin && <Link to="/admin/verification" className="rounded-xl border border-cyan-300/30 bg-cyan-300/10 px-4 py-2 text-sm font-semibold text-cyan-100 hover:bg-cyan-300/20">Admin Verification</Link>}</div>
 
       {dash.error !== null && (
         <p className="mt-4 rounded-xl border border-rose-400/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">

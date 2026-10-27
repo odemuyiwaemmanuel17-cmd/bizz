@@ -1,8 +1,9 @@
-import { useEffect, type ReactElement } from "react";
+import { useEffect, useState, type ReactElement } from "react";
 import { useLocation } from "react-router-dom";
 import { Link } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { useToast } from "./ui/Toaster";
+import { isCurrentVerificationAdmin } from "../lib/verification";
 
 interface NavbarProps {
   readonly onPostBizzClick?: () => void;
@@ -22,8 +23,27 @@ function isActive(pathname: string, to: string): boolean {
 
 export default function Navbar({ onPostBizzClick }: NavbarProps): ReactElement {
   const { isAuthenticated, user, signOut } = useAuth();
+  const [isVerificationAdmin, setIsVerificationAdmin] = useState(false);
   const toast = useToast();
   const location = useLocation();
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setIsVerificationAdmin(false);
+      return;
+    }
+    let active = true;
+    void isCurrentVerificationAdmin()
+      .then((allowed) => {
+        if (active) setIsVerificationAdmin(allowed);
+      })
+      .catch(() => {
+        if (active) setIsVerificationAdmin(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [isAuthenticated]);
 
   // Scroll to top whenever the route changes (multi-page UX).
   useEffect(() => {
@@ -61,6 +81,7 @@ export default function Navbar({ onPostBizzClick }: NavbarProps): ReactElement {
         <div className="flex flex-1 items-center justify-end gap-2 sm:gap-3">
           {isAuthenticated ? (
             <>
+              {isVerificationAdmin && <Link to="/admin/verification" className="hidden rounded-xl border border-cyan-300/30 bg-cyan-300/10 px-3 py-2 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-300/20 sm:inline">Admin</Link>}
               <span className="hidden max-w-[180px] truncate text-sm text-slate-300 sm:inline">
                 {user?.email ?? "Signed in"}
               </span>
