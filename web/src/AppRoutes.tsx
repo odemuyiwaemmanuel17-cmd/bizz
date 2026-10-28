@@ -24,6 +24,7 @@ import AdminVerificationReviewPage from "./pages/AdminVerificationReviewPage";
 import SettingsPage from "./pages/SettingsPage";
 import MonetizationPage from "./pages/MonetizationPage";
 import AdminRevenuePage from "./pages/AdminRevenuePage";
+import AdminControlCenterPage from "./pages/AdminControlCenterPage";
 
 export default function AppRoutes(): ReactElement {
   const [postOpen, setPostOpen] = useState<boolean>(false);
@@ -54,6 +55,7 @@ export default function AppRoutes(): ReactElement {
           <Route path="/admin/verification" element={<AdminVerificationQueuePage />} />
           <Route path="/admin/verification/:requestId" element={<AdminVerificationReviewPage />} />
           <Route path="/admin/revenue" element={<AdminRevenuePage />} />
+          <Route path="/admin" element={<AdminControlCenterPage />} />
         <Route path="/auth" element={<AuthPage />} />
         {/* React Router treats `@:username` as a literal path segment. Match the
             complete segment and let CreatorProfilePage normalize the leading @. */}

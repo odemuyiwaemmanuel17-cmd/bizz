@@ -95,7 +95,7 @@ export default function DashboardSidebar({ isAdmin }: DashboardSidebarProps): Re
         {isAdmin && (
           <section className="border-t border-white/10 pt-4">
             <h2 className="mb-2 px-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-300/70">Administration</h2>
-            <div className="space-y-1"><ItemLink item={{ label: "Admin Verification", to: "/admin/verification", icon: "◆" }} pathname={location.pathname} onNavigate={closeMobile} /><ItemLink item={{ label: "Revenue", to: "/admin/revenue", icon: "$" }} pathname={location.pathname} onNavigate={closeMobile} /></div>
+            <div className="space-y-1"><ItemLink item={{ label: "Admin Overview", to: "/admin", icon: "◆", exact: true }} pathname={location.pathname} onNavigate={closeMobile} /><ItemLink item={{ label: "Admin Verification", to: "/admin/verification", icon: "✓" }} pathname={location.pathname} onNavigate={closeMobile} /><ItemLink item={{ label: "Revenue", to: "/admin/revenue", icon: "$" }} pathname={location.pathname} onNavigate={closeMobile} /></div>
           </section>
         )}
       </nav>
