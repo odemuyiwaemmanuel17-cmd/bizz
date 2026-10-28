@@ -22,6 +22,8 @@ import PromotionRequestsPage from "./pages/PromotionRequestsPage";
 import AdminVerificationQueuePage from "./pages/AdminVerificationQueuePage";
 import AdminVerificationReviewPage from "./pages/AdminVerificationReviewPage";
 import SettingsPage from "./pages/SettingsPage";
+import MonetizationPage from "./pages/MonetizationPage";
+import AdminRevenuePage from "./pages/AdminRevenuePage";
 
 export default function AppRoutes(): ReactElement {
   const [postOpen, setPostOpen] = useState<boolean>(false);
@@ -42,6 +44,7 @@ export default function AppRoutes(): ReactElement {
         <Route path="/dashboard/profile/setup" element={<CreatorProfileSetupPage />} />
           <Route path="/dashboard/profile/edit" element={<CreatorProfileEditPage />} />
           <Route path="/dashboard/settings" element={<SettingsPage />} />
+          <Route path="/dashboard/monetization" element={<MonetizationPage />} />
         <Route path="/dashboard/video/upload" element={<CreatorVideoUploadPage />} />
         <Route path="/dashboard/videos" element={<MyVideosPage />} />
         <Route path="/dashboard/saved-videos" element={<SavedVideosPage />} />
@@ -50,6 +53,7 @@ export default function AppRoutes(): ReactElement {
           <Route path="/dashboard/promotions" element={<PromotionRequestsPage />} />
           <Route path="/admin/verification" element={<AdminVerificationQueuePage />} />
           <Route path="/admin/verification/:requestId" element={<AdminVerificationReviewPage />} />
+          <Route path="/admin/revenue" element={<AdminRevenuePage />} />
         <Route path="/auth" element={<AuthPage />} />
         {/* React Router treats `@:username` as a literal path segment. Match the
             complete segment and let CreatorProfilePage normalize the leading @. */}
