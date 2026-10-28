@@ -21,6 +21,7 @@ import VerificationRequestPage from "./pages/VerificationRequestPage";
 import PromotionRequestsPage from "./pages/PromotionRequestsPage";
 import AdminVerificationQueuePage from "./pages/AdminVerificationQueuePage";
 import AdminVerificationReviewPage from "./pages/AdminVerificationReviewPage";
+import SettingsPage from "./pages/SettingsPage";
 
 export default function AppRoutes(): ReactElement {
   const [postOpen, setPostOpen] = useState<boolean>(false);
@@ -39,7 +40,8 @@ export default function AppRoutes(): ReactElement {
         <Route path="/validation" element={<ValidationPage />} />
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/dashboard/profile/setup" element={<CreatorProfileSetupPage />} />
-        <Route path="/dashboard/profile/edit" element={<CreatorProfileEditPage />} />
+          <Route path="/dashboard/profile/edit" element={<CreatorProfileEditPage />} />
+          <Route path="/dashboard/settings" element={<SettingsPage />} />
         <Route path="/dashboard/video/upload" element={<CreatorVideoUploadPage />} />
         <Route path="/dashboard/videos" element={<MyVideosPage />} />
         <Route path="/dashboard/saved-videos" element={<SavedVideosPage />} />

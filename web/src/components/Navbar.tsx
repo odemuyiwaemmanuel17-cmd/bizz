@@ -3,6 +3,9 @@ import { useLocation } from "react-router-dom";
 import { Link } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { useToast } from "./ui/Toaster";
+import { getSupabase } from "../lib/supabase";
+import { creatorProfilePath } from "../lib/creator";
+import { isCurrentVerificationAdmin } from "../lib/verification";
 
 interface NavbarProps {
   readonly onPostBizzClick?: () => void;
@@ -23,8 +26,35 @@ function isActive(pathname: string, to: string): boolean {
 export default function Navbar({ onPostBizzClick }: NavbarProps): ReactElement {
   const { isAuthenticated, user, signOut } = useAuth();
   const [accountOpen, setAccountOpen] = useState(false);
+  const [isVerificationAdmin, setIsVerificationAdmin] = useState(false);
+  const [profilePath, setProfilePath] = useState<string | null>(null);
   const toast = useToast();
   const location = useLocation();
+
+  useEffect(() => {
+    if (!isAuthenticated || user === null) {
+      setIsVerificationAdmin(false);
+      setProfilePath(null);
+      return;
+    }
+    let active = true;
+    void isCurrentVerificationAdmin().then((allowed) => {
+      if (active) setIsVerificationAdmin(allowed);
+    }).catch(() => {
+      if (active) setIsVerificationAdmin(false);
+    });
+    const sb = getSupabase();
+    if (sb !== null) {
+      void sb.from("profiles").select("id,username").eq("id", user.id).maybeSingle().then((result) => {
+        if (!active || result.error !== null || result.data === null) return;
+        const row = result.data as { id: string; username: string | null };
+        setProfilePath(creatorProfilePath(row.username, row.id));
+      });
+    }
+    return () => {
+      active = false;
+    };
+  }, [isAuthenticated, user]);
 
   // Scroll to top whenever the route changes (multi-page UX).
   useEffect(() => {
@@ -68,7 +98,7 @@ export default function Navbar({ onPostBizzClick }: NavbarProps): ReactElement {
                 <span className="hidden max-w-[120px] truncate sm:inline">{user?.email ?? "Account"}</span>
                 <span aria-hidden="true" className="text-xs text-slate-500">{accountOpen ? "▲" : "▼"}</span>
               </button>
-              {accountOpen && <div role="menu" className="absolute right-0 top-12 z-50 w-52 rounded-2xl border border-white/10 bg-slate-950/95 p-2 shadow-2xl shadow-black/40 backdrop-blur-xl"><p className="truncate px-3 py-2 text-xs text-slate-500">{user?.email ?? "Signed in"}</p><Link role="menuitem" onClick={() => setAccountOpen(false)} to="/dashboard" className="block rounded-xl px-3 py-2 text-sm text-slate-300 hover:bg-white/10 hover:text-white">Dashboard</Link><Link role="menuitem" onClick={() => setAccountOpen(false)} to="/dashboard/profile/edit" className="block rounded-xl px-3 py-2 text-sm text-slate-300 hover:bg-white/10 hover:text-white">Account & profile</Link><Link role="menuitem" onClick={() => setAccountOpen(false)} to="/dashboard/verification" className="block rounded-xl px-3 py-2 text-sm text-slate-300 hover:bg-white/10 hover:text-white">Verification</Link><button role="menuitem" type="button" onClick={handleSignOut} className="mt-1 w-full rounded-xl border-t border-white/10 px-3 py-2 text-left text-sm text-slate-400 hover:bg-white/10 hover:text-white">Sign out</button></div>}
+              {accountOpen && <div role="menu" className="absolute right-0 top-12 z-50 w-52 rounded-2xl border border-white/10 bg-slate-950/95 p-2 shadow-2xl shadow-black/40 backdrop-blur-xl"><Link role="menuitem" onClick={() => setAccountOpen(false)} to={profilePath ?? "/dashboard/profile/edit"} className="block rounded-xl px-3 py-2 text-sm text-slate-300 hover:bg-white/10 hover:text-white">My Profile</Link><Link role="menuitem" onClick={() => setAccountOpen(false)} to="/dashboard" className="block rounded-xl px-3 py-2 text-sm text-slate-300 hover:bg-white/10 hover:text-white">Dashboard</Link><Link role="menuitem" onClick={() => setAccountOpen(false)} to="/dashboard/settings" className="block rounded-xl px-3 py-2 text-sm text-slate-300 hover:bg-white/10 hover:text-white">Settings</Link>{isVerificationAdmin && <Link role="menuitem" onClick={() => setAccountOpen(false)} to="/admin/verification" className="block rounded-xl px-3 py-2 text-sm font-semibold text-cyan-200 hover:bg-cyan-300/10">Admin</Link>}<button role="menuitem" type="button" onClick={handleSignOut} className="mt-1 w-full rounded-xl border-t border-white/10 px-3 py-2 text-left text-sm text-slate-400 hover:bg-white/10 hover:text-white">Sign out</button></div>}
             </div>
           ) : (
             <Link
