@@ -36,9 +36,9 @@ export async function fetchPublicVideos(page: number, creatorIds?: ReadonlyArray
     if (result.error !== null) return { items: [], hasMore: false, error: result.error.message };
     const rows = (result.data ?? []) as Array<{ id: string; user_id: string; video_url: string; caption: string | null; created_at: string; status: string; listing_id: string | null }>;
     const rowCreatorIds = Array.from(new Set(rows.map((row) => row.user_id).filter(Boolean)));
-    const profiles = rowCreatorIds.length === 0 ? { data: [], error: null } : await sb.from("profiles").select("id,username,display_name,full_name,avatar_url").in("id", rowCreatorIds);
-    const byId = new Map<string, { username: string | null; display_name: string | null; full_name: string | null; avatar_url: string | null }>();
-    for (const profile of (profiles.data ?? []) as Array<{ id: string; username?: string | null; display_name?: string | null; full_name?: string | null; avatar_url?: string | null }>) byId.set(profile.id, { username: profile.username ?? null, display_name: profile.display_name ?? null, full_name: profile.full_name ?? null, avatar_url: profile.avatar_url ?? null });
+    const profiles = rowCreatorIds.length === 0 ? { data: [], error: null } : await sb.from("profiles").select("id,username,display_name,avatar_url").in("id", rowCreatorIds);
+    const byId = new Map<string, { username: string | null; display_name: string | null; avatar_url: string | null }>();
+    for (const profile of (profiles.data ?? []) as Array<{ id: string; username?: string | null; display_name?: string | null; avatar_url?: string | null }>) byId.set(profile.id, { username: profile.username ?? null, display_name: profile.display_name ?? null, avatar_url: profile.avatar_url ?? null });
     const listingIds = Array.from(new Set(rows.map((row) => row.listing_id).filter((id): id is string => typeof id === "string" && id.length > 0)));
     const listingResult = listingIds.length === 0
       ? { data: [], error: null }
@@ -46,7 +46,7 @@ export async function fetchPublicVideos(page: number, creatorIds?: ReadonlyArray
     const activeListingIds = new Set((listingResult.data ?? []).map((row) => String((row as { id: string }).id)));
     const items: PublicVideo[] = rows.map((row) => {
       const profile = byId.get(row.user_id);
-      return { id: row.id, videoUrl: row.video_url, caption: row.caption, createdAt: row.created_at, creatorId: row.user_id, username: profile?.username ?? null, displayName: profile?.display_name ?? profile?.full_name ?? "Creator", avatarUrl: profile?.avatar_url ?? null, listingId: row.listing_id !== null && activeListingIds.has(row.listing_id) ? row.listing_id : null };
+      return { id: row.id, videoUrl: row.video_url, caption: row.caption, createdAt: row.created_at, creatorId: row.user_id, username: profile?.username ?? null, displayName: profile?.display_name ?? "Creator", avatarUrl: profile?.avatar_url ?? null, listingId: row.listing_id !== null && activeListingIds.has(row.listing_id) ? row.listing_id : null };
     });
     return { items, hasMore: rows.length === PAGE_SIZE, error: profiles.error?.message ?? listingResult.error?.message ?? null };
   } catch (error) {

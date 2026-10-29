@@ -67,8 +67,8 @@ function areaOf(row: { campus?: string | null; state?: string | null; country?: 
   return [row.campus, row.state, row.country].find((value) => typeof value === "string" && value.trim().length > 0)?.trim() ?? null;
 }
 
-function creatorName(row: { username?: string | null; handle?: string | null; display_name?: string | null; full_name?: string | null }): string {
-  return row.display_name?.trim() || row.full_name?.trim() || row.username?.trim() || row.handle?.trim() || "Creator";
+function creatorName(row: { username?: string | null; display_name?: string | null }): string {
+  return row.display_name?.trim() || row.username?.trim() || "Creator";
 }
 
 export async function searchMarketplace(filters: MarketplaceSearchFilters): Promise<MarketplaceSearchResult> {
@@ -81,19 +81,19 @@ export async function searchMarketplace(filters: MarketplaceSearchFilters): Prom
   const minCents = min !== null && Number.isFinite(min) && min >= 0 ? Math.round(min * 100) : null;
   const maxCents = max !== null && Number.isFinite(max) && max >= 0 ? Math.round(max * 100) : null;
   try {
-    let areaQuery = sb.from("profiles").select("id,username,handle,display_name,full_name,avatar_url,campus,state,country,creator_type,is_verified").limit(50);
+    let areaQuery = sb.from("profiles").select("id,username,display_name,avatar_url,campus,state,country,creator_type,is_verified").limit(50);
     if (area.length > 0) areaQuery = areaQuery.or(`campus.ilike.%${area}%,state.ilike.%${area}%,country.ilike.%${area}%`);
     const areaResult = await areaQuery;
     if (areaResult.error) throw new Error(areaResult.error.message);
     const areaIds = (areaResult.data ?? []).map((row) => String((row as { id: string }).id));
 
-    let creatorQuery = sb.from("profiles").select("id,username,handle,display_name,full_name,avatar_url,campus,state,country,creator_type,is_verified").limit(20);
-    if (term.length > 0) creatorQuery = creatorQuery.or(`username.ilike.%${term}%,handle.ilike.%${term}%,display_name.ilike.%${term}%,full_name.ilike.%${term}%,bio.ilike.%${term}%,creator_type.ilike.%${term}%`);
+    let creatorQuery = sb.from("profiles").select("id,username,display_name,avatar_url,campus,state,country,creator_type,is_verified").limit(20);
+    if (term.length > 0) creatorQuery = creatorQuery.or(`username.ilike.%${term}%,display_name.ilike.%${term}%,bio.ilike.%${term}%,creator_type.ilike.%${term}%`);
     if (area.length > 0) creatorQuery = creatorQuery.or(`campus.ilike.%${area}%,state.ilike.%${area}%,country.ilike.%${area}%`);
     const creatorResult = await creatorQuery;
     if (creatorResult.error) throw new Error(creatorResult.error.message);
-    const creatorRows = (creatorResult.data ?? []) as Array<{ id: string; username?: string | null; handle?: string | null; display_name?: string | null; full_name?: string | null; avatar_url?: string | null; campus?: string | null; state?: string | null; country?: string | null; creator_type?: string | null; is_verified?: boolean | null }>;
-    const creators = creatorRows.map((row) => ({ id: row.id, username: row.username ?? row.handle ?? null, displayName: creatorName(row), avatarUrl: row.avatar_url ?? null, area: areaOf(row), creatorType: row.creator_type ?? null, verified: row.is_verified === true }));
+    const creatorRows = (creatorResult.data ?? []) as Array<{ id: string; username?: string | null; display_name?: string | null; avatar_url?: string | null; campus?: string | null; state?: string | null; country?: string | null; creator_type?: string | null; is_verified?: boolean | null }>;
+    const creators = creatorRows.map((row) => ({ id: row.id, username: row.username ?? null, displayName: creatorName(row), avatarUrl: row.avatar_url ?? null, area: areaOf(row), creatorType: row.creator_type ?? null, verified: row.is_verified === true }));
     const creatorSearchIds = creatorRows.map((row) => row.id);
 
     const makeListingQuery = () => {
@@ -127,9 +127,9 @@ export async function searchMarketplace(filters: MarketplaceSearchFilters): Prom
     for (const creator of creators) creatorById.set(creator.id, creator);
     const missingOwnerIds = Array.from(new Set(Array.from(listingRows.values()).map((row) => String(row.user_id ?? "")).filter((id) => id.length > 0 && !creatorById.has(id))));
     if (missingOwnerIds.length > 0) {
-      const owners = await sb.from("profiles").select("id,username,handle,display_name,full_name,avatar_url,campus,state,country,creator_type,is_verified").in("id", missingOwnerIds);
+      const owners = await sb.from("profiles").select("id,username,display_name,avatar_url,campus,state,country,creator_type,is_verified").in("id", missingOwnerIds);
       if (owners.error) throw new Error(owners.error.message);
-      for (const row of (owners.data ?? []) as typeof creatorRows) { const creator = { id: row.id, username: row.username ?? row.handle ?? null, displayName: creatorName(row), avatarUrl: row.avatar_url ?? null, area: areaOf(row), creatorType: row.creator_type ?? null, verified: row.is_verified === true }; creatorById.set(row.id, creator); }
+      for (const row of (owners.data ?? []) as typeof creatorRows) { const creator = { id: row.id, username: row.username ?? null, displayName: creatorName(row), avatarUrl: row.avatar_url ?? null, area: areaOf(row), creatorType: row.creator_type ?? null, verified: row.is_verified === true }; creatorById.set(row.id, creator); }
     }
     let bizzes = Array.from(listingRows.values()).filter((row) => {
       const ownerId = String(row.user_id ?? "");

@@ -53,10 +53,10 @@ export async function fetchVideoSocial(videoId: string): Promise<VideoSocialStat
   if (comments.error !== null) throw new Error(comments.error.message);
   const rows = (comments.data ?? []) as Array<{ id: string; video_id: string; user_id: string; body: string; created_at: string; updated_at?: string | null }>;
   const profileIds = Array.from(new Set(rows.map((row) => row.user_id)));
-  const profileResult = profileIds.length === 0 ? { data: [], error: null } : await sb.from("profiles").select("id,username,handle,display_name,full_name,avatar_url").in("id", profileIds);
+  const profileResult = profileIds.length === 0 ? { data: [], error: null } : await sb.from("profiles").select("id,username,display_name,avatar_url").in("id", profileIds);
   if (profileResult.error !== null) throw new Error(profileResult.error.message);
-  const profiles = new Map<string, { username?: string | null; handle?: string | null; display_name?: string | null; full_name?: string | null; avatar_url?: string | null }>();
-  for (const profile of (profileResult.data ?? []) as Array<{ id: string; username?: string | null; handle?: string | null; display_name?: string | null; full_name?: string | null; avatar_url?: string | null }>) profiles.set(profile.id, profile);
+  const profiles = new Map<string, { username?: string | null; display_name?: string | null; avatar_url?: string | null }>();
+  for (const profile of (profileResult.data ?? []) as Array<{ id: string; username?: string | null; display_name?: string | null; avatar_url?: string | null }>) profiles.set(profile.id, profile);
   return {
     likes: likes.count ?? 0,
     liked: (mine.data ?? []).length > 0,
@@ -71,7 +71,7 @@ export async function fetchVideoSocial(videoId: string): Promise<VideoSocialStat
         body: row.body,
         createdAt: row.created_at,
         updatedAt: row.updated_at ?? row.created_at,
-        username: profile?.username ?? profile?.handle ?? null,
+        username: profile?.username ?? null,
         avatarUrl: profile?.avatar_url ?? null,
       };
     }),
@@ -175,9 +175,9 @@ export async function fetchCreatorNetwork(creatorId: string, relation: "follower
   if (result.error) throw new Error(result.error.message);
   const ids = (result.data ?? []).map((row) => String((row as Record<string, string>)[key])).filter(Boolean);
   if (ids.length === 0) return [];
-  const profiles = await sb.from("profiles").select("id,username,handle,display_name,full_name,avatar_url").in("id", ids);
+  const profiles = await sb.from("profiles").select("id,username,display_name,avatar_url").in("id", ids);
   if (profiles.error) throw new Error(profiles.error.message);
   const byId = new Map<string, CreatorSummary>();
-  for (const row of (profiles.data ?? []) as Array<{ id: string; username?: string | null; handle?: string | null; display_name?: string | null; full_name?: string | null; avatar_url?: string | null }>) byId.set(row.id, { id: row.id, username: row.username ?? row.handle ?? null, displayName: row.display_name ?? row.full_name ?? "Creator", avatarUrl: row.avatar_url ?? null });
+  for (const row of (profiles.data ?? []) as Array<{ id: string; username?: string | null; display_name?: string | null; avatar_url?: string | null }>) byId.set(row.id, { id: row.id, username: row.username ?? null, displayName: row.display_name ?? "Creator", avatarUrl: row.avatar_url ?? null });
   return ids.map((id) => byId.get(id)).filter((row): row is CreatorSummary => row !== undefined);
 }

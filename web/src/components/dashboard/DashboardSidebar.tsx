@@ -1,10 +1,6 @@
 import { useState, type ReactElement } from "react";
 import { Link, useLocation } from "react-router-dom";
 
-interface DashboardSidebarProps {
-  readonly isAdmin: boolean;
-}
-
 interface SidebarItem {
   readonly label: string;
   readonly to: string;
@@ -64,7 +60,7 @@ function ItemLink({ item, pathname, onNavigate }: { readonly item: SidebarItem; 
   );
 }
 
-export default function DashboardSidebar({ isAdmin }: DashboardSidebarProps): ReactElement {
+export default function DashboardSidebar(): ReactElement {
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -92,12 +88,6 @@ export default function DashboardSidebar({ isAdmin }: DashboardSidebarProps): Re
             </div>
           </section>
         ))}
-        {isAdmin && (
-          <section className="border-t border-white/10 pt-4">
-            <h2 className="mb-2 px-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-300/70">Administration</h2>
-            <div className="space-y-1"><ItemLink item={{ label: "Admin Overview", to: "/admin", icon: "◆", exact: true }} pathname={location.pathname} onNavigate={closeMobile} /><ItemLink item={{ label: "Admin Verification", to: "/admin/verification", icon: "✓" }} pathname={location.pathname} onNavigate={closeMobile} /><ItemLink item={{ label: "Revenue", to: "/admin/revenue", icon: "$" }} pathname={location.pathname} onNavigate={closeMobile} /></div>
-          </section>
-        )}
       </nav>
     </aside>
   );

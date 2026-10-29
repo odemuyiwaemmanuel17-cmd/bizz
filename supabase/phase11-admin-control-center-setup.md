@@ -11,6 +11,7 @@ monetization migrations:
 4. `phase8-marketplace-growth-migration.sql`
 5. `phase10-monetization-migration.sql`
 6. `phase11-admin-control-center-migration.sql`
+7. `phase12-admin-schema-alignment-migration.sql`
 
 The first administrator remains the explicit row in
 `public.verification_admins`. The browser cannot grant, revoke, or edit that
@@ -36,10 +37,16 @@ The deployed app also keeps these direct routes:
 - `admin_audit_logs` has administrator-only RLS.
 - Reports, private financial records, promotion requests, and moderation data
   are returned through administrator-only security-definer functions.
-- Video/listing/idea moderation changes are written through audited functions;
-  ordinary clients have no write policy for those administrative changes.
+- Video and listing moderation changes are written through audited functions;
+  ideas are read-only because the live ideas table has no moderation-status
+  field. Ordinary clients have no write policy for administrative changes.
 - Verification evidence continues to use the private bucket and short-lived
   signed URLs from the verification admin system.
+
+Phase 12 specifically repairs the administrator profile, ideas, and
+verification queue RPCs for the live columns: `profiles.username`,
+`profiles.display_name`, `profiles.email`, `ideas.user_id`,
+`ideas.description`, and `creator_verification_requests.creator_id`.
 
 ## Deliberately unavailable controls
 

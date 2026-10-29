@@ -123,13 +123,14 @@ $$;
 revoke all on function public.admin_platform_overview() from public;
 grant execute on function public.admin_platform_overview() to authenticated;
 
+drop function if exists public.admin_list_profiles(text, integer, integer);
 create or replace function public.admin_list_profiles(
   p_search text default null,
   p_page integer default 0,
   p_page_size integer default 25
 )
 returns table (
-  id uuid, display_name text, username text, handle text, avatar_url text,
+  id uuid, display_name text, email text, username text, avatar_url text,
   is_verified boolean, created_at timestamptz, total_count bigint
 )
 language plpgsql security definer set search_path = public
@@ -137,12 +138,13 @@ as $$
 begin
   perform public.require_verification_admin();
   return query
-  select p.id, coalesce(p.display_name, p.full_name, p.handle, 'Unnamed user'), p.username, p.handle,
+  select p.id, coalesce(p.display_name, p.username, 'Unnamed user'), p.email, p.username,
          p.avatar_url, coalesce(p.is_verified, false), p.created_at, count(*) over()
   from public.profiles p
   where nullif(trim(coalesce(p_search, '')), '') is null
-     or lower(coalesce(p.display_name, p.full_name, p.handle, '')) like '%' || lower(trim(p_search)) || '%'
+     or lower(coalesce(p.display_name, p.username, '')) like '%' || lower(trim(p_search)) || '%'
      or lower(coalesce(p.username, '')) like '%' || lower(trim(p_search)) || '%'
+     or lower(coalesce(p.email, '')) like '%' || lower(trim(p_search)) || '%'
      or p.id::text = trim(p_search)
   order by p.created_at desc
   offset greatest(coalesce(p_page, 0), 0) * least(greatest(coalesce(p_page_size, 25), 1), 100)
@@ -216,6 +218,7 @@ $$;
 revoke all on function public.admin_list_listings(text, text, integer, integer) from public;
 grant execute on function public.admin_list_listings(text, text, integer, integer) to authenticated;
 
+drop function if exists public.admin_list_ideas(text, text, integer, integer);
 create or replace function public.admin_list_ideas(
   p_search text default null,
   p_status text default null,
@@ -223,22 +226,21 @@ create or replace function public.admin_list_ideas(
   p_page_size integer default 25
 )
 returns table (
-  id uuid, owner_id uuid, owner_name text, title text, pitch text, category text,
-  status text, vote_count bigint, created_at timestamptz, total_count bigint
+  id uuid, user_id uuid, owner_name text, title text, description text, category text,
+  vote_count bigint, created_at timestamptz, total_count bigint
 )
 language plpgsql security definer set search_path = public
 as $$
 begin
   perform public.require_verification_admin();
   return query
-  select i.id, i.owner_id, coalesce(p.display_name, p.username, 'Unnamed creator'), i.title,
-         i.pitch, i.category, i.status, (select count(*) from public.idea_votes iv where iv.idea_id = i.id), i.created_at, count(*) over()
+  select i.id, i.user_id, coalesce(p.display_name, p.username, 'Unnamed creator'), i.title,
+         i.description, i.category, (select count(*) from public.idea_votes iv where iv.idea_id = i.id), i.created_at, count(*) over()
   from public.ideas i
-  left join public.profiles p on p.id = i.owner_id
-  where (nullif(trim(coalesce(p_status, '')), '') is null or i.status = p_status)
-    and (nullif(trim(coalesce(p_search, '')), '') is null
+  left join public.profiles p on p.id = i.user_id
+  where (nullif(trim(coalesce(p_search, '')), '') is null
       or lower(i.title) like '%' || lower(trim(p_search)) || '%'
-      or lower(coalesce(i.pitch, '')) like '%' || lower(trim(p_search)) || '%'
+      or lower(coalesce(i.description, '')) like '%' || lower(trim(p_search)) || '%'
       or i.id::text = trim(p_search))
   order by i.created_at desc
   offset greatest(coalesce(p_page, 0), 0) * least(greatest(coalesce(p_page_size, 25), 1), 100)
@@ -375,24 +377,7 @@ $$;
 revoke all on function public.admin_moderate_listing(uuid, text, text) from public;
 grant execute on function public.admin_moderate_listing(uuid, text, text) to authenticated;
 
-create or replace function public.admin_moderate_idea(p_idea_id uuid, p_action text, p_reason text default null)
-returns jsonb language plpgsql security definer set search_path = public
-as $$
-declare before_row public.ideas%rowtype; next_status text;
-begin
-  perform public.require_verification_admin();
-  if p_action not in ('archive', 'restore') then raise exception 'Unsupported idea action.'; end if;
-  select * into before_row from public.ideas where id = p_idea_id for update;
-  if not found then raise exception 'Idea not found.'; end if;
-  next_status := case when p_action = 'archive' then 'archived' else 'open' end;
-  update public.ideas set status = next_status, updated_at = now() where id = p_idea_id;
-  insert into public.admin_audit_logs(administrator_id, action, entity_type, entity_id, previous_data, new_data, reason)
-  values (auth.uid(), p_action, 'idea', p_idea_id, jsonb_build_object('status', before_row.status), jsonb_build_object('status', next_status), nullif(trim(coalesce(p_reason, '')), ''));
-  return jsonb_build_object('id', p_idea_id, 'status', next_status);
-end;
-$$;
-revoke all on function public.admin_moderate_idea(uuid, text, text) from public;
-grant execute on function public.admin_moderate_idea(uuid, text, text) to authenticated;
+drop function if exists public.admin_moderate_idea(uuid, text, text);
 
 create or replace function public.admin_update_report(p_report_type text, p_report_id uuid, p_status text, p_reason text default null)
 returns jsonb language plpgsql security definer set search_path = public
