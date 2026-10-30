@@ -22,6 +22,8 @@ import PromotionRequestsPage from "./pages/PromotionRequestsPage";
 import AdminVerificationReviewPage from "./pages/AdminVerificationReviewPage";
 import SettingsPage from "./pages/SettingsPage";
 import MonetizationPage from "./pages/MonetizationPage";
+import PricingPage from "./pages/PricingPage";
+import BillingPage from "./pages/BillingPage";
 import AdminControlCenterPage from "./pages/AdminControlCenterPage";
 
 export default function AppRoutes(): ReactElement {
@@ -42,7 +44,9 @@ export default function AppRoutes(): ReactElement {
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/dashboard/profile/setup" element={<CreatorProfileSetupPage />} />
           <Route path="/dashboard/profile/edit" element={<CreatorProfileEditPage />} />
-          <Route path="/dashboard/settings" element={<SettingsPage />} />
+        <Route path="/dashboard/settings" element={<SettingsPage />} />
+          <Route path="/pricing" element={<PricingPage />} />
+          <Route path="/dashboard/billing" element={<BillingPage />} />
           <Route path="/dashboard/monetization" element={<MonetizationPage />} />
         <Route path="/dashboard/video/upload" element={<CreatorVideoUploadPage />} />
         <Route path="/dashboard/videos" element={<MyVideosPage />} />

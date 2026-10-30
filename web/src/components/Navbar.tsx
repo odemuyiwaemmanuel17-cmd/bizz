@@ -15,6 +15,7 @@ const LINKS: ReadonlyArray<{ label: string; to: string }> = [
   { label: "Home", to: "/" },
   { label: "Discover", to: "/discover" },
   { label: "Validation", to: "/validation" },
+  { label: "Plans", to: "/pricing" },
   { label: "Dashboard", to: "/dashboard" },
 ];
 

@@ -22,6 +22,8 @@ export interface MonetizationPlan {
   readonly currency: string | null;
   readonly billingInterval: "month" | "year" | null;
   readonly entitlements: Record<string, unknown>;
+  readonly audience: "all" | "creator" | "business";
+  readonly paystackPlanCode: string | null;
 }
 
 export interface CreatorSubscription {
@@ -62,6 +64,17 @@ export interface CreatorPayoutSummary {
   readonly createdAt: string;
 }
 
+export interface PromotionPackage {
+  readonly id: string;
+  readonly code: string;
+  readonly name: string;
+  readonly placement: string;
+  readonly durationDays: number;
+  readonly priceCents: number;
+  readonly currency: string;
+  readonly terms: string;
+}
+
 export interface MonetizationOverview {
   readonly config: MonetizationConfig;
   readonly plans: readonly MonetizationPlan[];
@@ -92,6 +105,22 @@ export interface AdminRevenueCurrencySummary {
   readonly promotionCents: number;
   readonly subscriptionCents: number;
   readonly marketplaceCents: number;
+}
+
+export interface AdminPaymentTransaction {
+  readonly id: string;
+  readonly buyerId: string | null;
+  readonly creatorId: string | null;
+  readonly transactionKind: string;
+  readonly status: string;
+  readonly amountCents: number;
+  readonly currency: string;
+  readonly platformFeeCents: number;
+  readonly creatorNetCents: number;
+  readonly provider: string | null;
+  readonly providerReference: string | null;
+  readonly failureReason: string | null;
+  readonly createdAt: string;
 }
 
 function requireSupabase() {
@@ -129,7 +158,7 @@ export async function getMonetizationOverview(): Promise<MonetizationOverview> {
   if (userId === undefined) throw new Error("Sign in to view monetization.");
   const [configResult, plansResult, subscriptionResult, transactionsResult, promotionResult, payoutsResult] = await Promise.all([
     sb.from("monetization_config").select("environment,provider,payments_enabled,subscriptions_enabled,paid_promotions_enabled,digital_products_enabled,collaborations_enabled").eq("id", 1).single(),
-    sb.from("monetization_plans").select("code,name,description,active,price_cents,currency,billing_interval,entitlements").order("code"),
+    sb.from("monetization_plans").select("code,name,description,active,price_cents,currency,billing_interval,entitlements,audience,paystack_plan_code").order("display_order").order("code"),
     sb.from("creator_subscriptions").select("id,plan_code,status,current_period_end,cancel_at_period_end").eq("creator_id", userId).in("status", ["incomplete", "pending", "active", "past_due"]).order("created_at", { ascending: false }).limit(1).maybeSingle(),
     sb.from("payment_transactions").select("id,transaction_kind,status,amount_cents,currency,platform_fee_cents,creator_net_cents,created_at").or(`buyer_id.eq.${userId},creator_id.eq.${userId}`).order("created_at", { ascending: false }).limit(25),
     sb.from("promotion_orders").select("id,target_type,status,amount_cents,currency,starts_at,ends_at,created_at").eq("creator_id", userId).order("created_at", { ascending: false }).limit(25),
@@ -146,6 +175,8 @@ export async function getMonetizationOverview(): Promise<MonetizationOverview> {
       currency: typeof row.currency === "string" ? row.currency : null,
       billingInterval,
       entitlements: objectValue(row.entitlements),
+      audience: row.audience === "business" || row.audience === "all" ? row.audience : "creator",
+      paystackPlanCode: typeof row.paystack_plan_code === "string" ? row.paystack_plan_code : null,
     };
   });
   const subscriptionRow = subscriptionResult.data as Record<string, unknown> | null;
@@ -167,6 +198,45 @@ export async function getMonetizationOverview(): Promise<MonetizationOverview> {
     })),
     payouts: ((payoutsResult.data ?? []) as Array<Record<string, unknown>>).map((row) => ({ id: String(row.id), amountCents: numberValue(row.amount_cents), currency: String(row.currency), status: String(row.status), createdAt: String(row.created_at) })),
   };
+}
+
+export async function getPublicPlans(): Promise<readonly MonetizationPlan[]> {
+  const result = await requireSupabase().from("monetization_plans").select("code,name,description,active,price_cents,currency,billing_interval,entitlements,audience,paystack_plan_code").eq("active", true).order("display_order").order("code");
+  if (result.error) throw new Error(result.error.message);
+  return ((result.data ?? []) as Array<Record<string, unknown>>).map((row) => ({
+    code: String(row.code), name: String(row.name), description: String(row.description), active: row.active === true,
+    priceCents: row.price_cents === null || row.price_cents === undefined ? null : numberValue(row.price_cents),
+    currency: typeof row.currency === "string" ? row.currency : null,
+    billingInterval: row.billing_interval === "month" || row.billing_interval === "year" ? row.billing_interval : null,
+    entitlements: objectValue(row.entitlements), audience: row.audience === "business" || row.audience === "all" ? row.audience : "creator",
+    paystackPlanCode: typeof row.paystack_plan_code === "string" ? row.paystack_plan_code : null,
+  }));
+}
+
+export async function getPromotionPackages(): Promise<readonly PromotionPackage[]> {
+  const result = await requireSupabase().from("promotion_packages").select("id,code,name,placement,duration_days,price_cents,currency,terms").eq("active", true).order("price_cents");
+  if (result.error) throw new Error(result.error.message);
+  return ((result.data ?? []) as Array<Record<string, unknown>>).map((row) => ({ id: String(row.id), code: String(row.code), name: String(row.name), placement: String(row.placement), durationDays: numberValue(row.duration_days), priceCents: numberValue(row.price_cents), currency: String(row.currency), terms: String(row.terms) }));
+}
+
+async function authenticatedApiHeaders(): Promise<HeadersInit> {
+  const session = await requireSupabase().auth.getSession();
+  const token = session.data.session?.access_token;
+  if (!token) throw new Error("Sign in to continue.");
+  return { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+}
+
+export async function startPaystackCheckout(input: { readonly kind: "subscription" | "promotion"; readonly planCode?: string; readonly packageId?: string; readonly targetId?: string }): Promise<{ readonly authorizationUrl: string; readonly reference: string }> {
+  const response = await fetch("/api/paystack/initialize", { method: "POST", headers: await authenticatedApiHeaders(), body: JSON.stringify(input) });
+  const body = await response.json().catch(() => ({})) as { authorizationUrl?: string; reference?: string; error?: string };
+  if (!response.ok || typeof body.authorizationUrl !== "string" || typeof body.reference !== "string") throw new Error(body.error ?? "Paystack checkout could not be initialized.");
+  return { authorizationUrl: body.authorizationUrl, reference: body.reference };
+}
+
+export async function verifyPaystackPayment(reference: string): Promise<void> {
+  const response = await fetch("/api/paystack/verify", { method: "POST", headers: await authenticatedApiHeaders(), body: JSON.stringify({ reference }) });
+  const body = await response.json().catch(() => ({})) as { error?: string };
+  if (!response.ok) throw new Error(body.error ?? "Payment could not be verified.");
 }
 
 export async function getAdminRevenueSummary(): Promise<AdminRevenueSummary> {
@@ -199,6 +269,35 @@ export async function getAdminRevenueSummary(): Promise<AdminRevenueSummary> {
       }];
     }),
   };
+}
+
+export async function listAdminPaymentTransactions(search: string, status: string, kind: string, page = 0): Promise<{ readonly rows: readonly AdminPaymentTransaction[]; readonly total: number }> {
+  const result = await requireSupabase().rpc("admin_list_payment_transactions", { p_search: search.trim() || null, p_status: status || null, p_kind: kind || null, p_from: null, p_to: null, p_page: page, p_page_size: 25 });
+  if (result.error) throw new Error(result.error.message);
+  const rows = (result.data ?? []) as Array<Record<string, unknown>>;
+  return { total: numberValue(rows[0]?.total_count), rows: rows.map((row) => ({ id: String(row.id), buyerId: typeof row.buyer_id === "string" ? row.buyer_id : null, creatorId: typeof row.creator_id === "string" ? row.creator_id : null, transactionKind: String(row.transaction_kind), status: String(row.status), amountCents: numberValue(row.amount_cents), currency: String(row.currency), platformFeeCents: numberValue(row.platform_fee_cents), creatorNetCents: numberValue(row.creator_net_cents), provider: typeof row.provider === "string" ? row.provider : null, providerReference: typeof row.provider_reference === "string" ? row.provider_reference : null, failureReason: typeof row.failure_reason === "string" ? row.failure_reason : null, createdAt: String(row.created_at) })) };
+}
+
+export async function updateAdminMonetizationConfig(input: { readonly environment: MonetizationEnvironment; readonly paymentsEnabled: boolean; readonly subscriptionsEnabled: boolean; readonly paidPromotionsEnabled: boolean }): Promise<void> {
+  const result = await requireSupabase().rpc("admin_update_monetization_config", { p_environment: input.environment, p_provider: "paystack", p_payments_enabled: input.paymentsEnabled, p_subscriptions_enabled: input.subscriptionsEnabled, p_paid_promotions_enabled: input.paidPromotionsEnabled });
+  if (result.error) throw new Error(result.error.message);
+}
+
+export async function getAdminMonetizationConfig(): Promise<MonetizationConfig> {
+  const result = await requireSupabase().from("monetization_config").select("environment,provider,payments_enabled,subscriptions_enabled,paid_promotions_enabled,digital_products_enabled,collaborations_enabled").eq("id", 1).single();
+  if (result.error) throw new Error(result.error.message);
+  return mapConfig(result.data as Record<string, unknown>);
+}
+
+export async function getAdminPlans(): Promise<readonly MonetizationPlan[]> {
+  const result = await requireSupabase().from("monetization_plans").select("code,name,description,active,price_cents,currency,billing_interval,entitlements,audience,paystack_plan_code").order("display_order").order("code");
+  if (result.error) throw new Error(result.error.message);
+  return ((result.data ?? []) as Array<Record<string, unknown>>).map((row) => ({ code: String(row.code), name: String(row.name), description: String(row.description), active: row.active === true, priceCents: row.price_cents === null || row.price_cents === undefined ? null : numberValue(row.price_cents), currency: typeof row.currency === "string" ? row.currency : null, billingInterval: row.billing_interval === "month" || row.billing_interval === "year" ? row.billing_interval : null, entitlements: objectValue(row.entitlements), audience: row.audience === "business" || row.audience === "all" ? row.audience : "creator", paystackPlanCode: typeof row.paystack_plan_code === "string" ? row.paystack_plan_code : null }));
+}
+
+export async function updateAdminPlan(plan: MonetizationPlan, priceCents: number | null, active: boolean, entitlements: Record<string, unknown>): Promise<void> {
+  const result = await requireSupabase().rpc("admin_update_monetization_plan", { p_code: plan.code, p_name: plan.name, p_description: plan.description, p_active: active, p_price_cents: priceCents, p_currency: plan.currency ?? "NGN", p_billing_interval: plan.billingInterval, p_entitlements: entitlements, p_paystack_plan_code: plan.paystackPlanCode });
+  if (result.error) throw new Error(result.error.message);
 }
 
 export function formatMinorAmount(cents: number, currency: string): string {

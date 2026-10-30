@@ -32,7 +32,7 @@ const GROUPS: readonly SidebarGroup[] = [
       { label: "My Profile", to: "/dashboard/profile/edit", icon: "◉" },
       { label: "Analytics", to: "/dashboard/analytics", icon: "↗" },
       { label: "Promotions", to: "/dashboard/promotions", icon: "◇" },
-      { label: "Monetization", to: "/dashboard/monetization", icon: "$" },
+      { label: "Plans & Billing", to: "/dashboard/billing", icon: "$" },
     ],
   },
   {
