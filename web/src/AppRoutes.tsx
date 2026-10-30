@@ -19,11 +19,9 @@ import ListingDetailPage from "./pages/ListingDetailPage";
 import AnalyticsPage from "./pages/AnalyticsPage";
 import VerificationRequestPage from "./pages/VerificationRequestPage";
 import PromotionRequestsPage from "./pages/PromotionRequestsPage";
-import AdminVerificationQueuePage from "./pages/AdminVerificationQueuePage";
 import AdminVerificationReviewPage from "./pages/AdminVerificationReviewPage";
 import SettingsPage from "./pages/SettingsPage";
 import MonetizationPage from "./pages/MonetizationPage";
-import AdminRevenuePage from "./pages/AdminRevenuePage";
 import AdminControlCenterPage from "./pages/AdminControlCenterPage";
 
 export default function AppRoutes(): ReactElement {
@@ -52,9 +50,9 @@ export default function AppRoutes(): ReactElement {
          <Route path="/dashboard/analytics" element={<AnalyticsPage />} />
          <Route path="/dashboard/verification" element={<VerificationRequestPage />} />
           <Route path="/dashboard/promotions" element={<PromotionRequestsPage />} />
-          <Route path="/admin/verification" element={<AdminVerificationQueuePage />} />
+           <Route path="/admin/verification" element={<Navigate to="/admin?section=verification" replace />} />
           <Route path="/admin/verification/:requestId" element={<AdminVerificationReviewPage />} />
-          <Route path="/admin/revenue" element={<AdminRevenuePage />} />
+           <Route path="/admin/revenue" element={<Navigate to="/admin?section=revenue" replace />} />
           <Route path="/admin" element={<AdminControlCenterPage />} />
         <Route path="/auth" element={<AuthPage />} />
         {/* React Router treats `@:username` as a literal path segment. Match the
