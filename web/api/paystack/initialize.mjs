@@ -1,4 +1,4 @@
-import { adminClient, authenticatedUser, enabledConfig, json, methodAllowed, paystackRequest, publicAppUrl, reference, requestBody } from "../_paystack.mjs";
+import { adminClient, authenticatedUser, checkoutKind, enabledConfig, json, methodAllowed, paystackRequest, publicAppUrl, reference, requestBody } from "../_paystack.mjs";
 
 export default async function handler(request, response) {
   if (!methodAllowed(request, response)) return;
@@ -6,8 +6,11 @@ export default async function handler(request, response) {
   try {
     const user = await authenticatedUser(request, client);
     const body = requestBody(request);
-    const kind = body.kind === "promotion" ? "promotion" : "subscription";
+    const kind = checkoutKind(body.kind);
     await enabledConfig(client, kind === "subscription" ? "subscriptions_enabled" : "paid_promotions_enabled");
+    const appUrl = publicAppUrl();
+    if (!appUrl) throw new Error("PUBLIC_APP_URL is not configured on the server.");
+    if (typeof user.email !== "string" || user.email.length === 0) throw new Error("Your account does not have an email address for Paystack checkout.");
     const checkoutReference = reference(kind);
     let amount;
     let currency;
@@ -19,21 +22,30 @@ export default async function handler(request, response) {
       if (planResult.error || !planResult.data || planResult.data.code === "free" || planResult.data.price_cents === null) throw new Error("This subscription plan is unavailable.");
       const plan = planResult.data;
       amount = Number(plan.price_cents);
-      currency = plan.currency;
+      currency = typeof plan.currency === "string" ? plan.currency.toUpperCase() : "";
+      if (!Number.isSafeInteger(amount) || amount <= 0 || !/^[A-Z]{3}$/.test(currency) || (plan.billing_interval !== "month" && plan.billing_interval !== "year")) throw new Error("This plan does not have valid payment configuration.");
+      const existing = await client.from("creator_subscriptions").select("id,status,current_period_end").eq("creator_id", user.id).eq("plan_code", plan.code).in("status", ["active", "pending", "past_due"]).order("created_at", { ascending: false }).limit(1).maybeSingle();
+      if (existing.error) throw new Error(existing.error.message);
+      if (existing.data?.status === "active" || existing.data?.status === "past_due") throw new Error("You already have this plan. Manage the current subscription from Plans & Billing.");
+      if (existing.data?.status === "pending") throw new Error("A checkout for this plan is already pending.");
       const subscription = await client.from("creator_subscriptions").insert({ creator_id: user.id, plan_code: plan.code, status: "pending", provider: "paystack" }).select("id").single();
       if (subscription.error || !subscription.data) throw new Error(subscription.error?.message || "Subscription could not be prepared.");
       metadata = { hustlehub_kind: "subscription", user_id: user.id, subscription_id: subscription.data.id, plan_code: plan.code, billing_interval: plan.billing_interval };
       const transaction = await client.from("payment_transactions").insert({ buyer_id: user.id, creator_id: user.id, transaction_kind: "subscription", status: "pending", amount_cents: amount, currency, platform_fee_cents: 0, creator_net_cents: 0, provider: "paystack", provider_reference: checkoutReference, idempotency_key: checkoutReference, metadata }).select("id").single();
-      if (transaction.error || !transaction.data) throw new Error(transaction.error?.message || "Payment transaction could not be prepared.");
+      if (transaction.error || !transaction.data) {
+        await client.from("creator_subscriptions").update({ status: "incomplete", updated_at: new Date().toISOString() }).eq("id", subscription.data.id).eq("status", "pending");
+        throw new Error(transaction.error?.message || "Payment transaction could not be prepared.");
+      }
       metadata.transaction_id = transaction.data.id;
       if (plan.paystack_plan_code) metadata.paystack_plan_code = plan.paystack_plan_code;
-      const payload = { email: user.email, amount: String(amount), currency, reference: checkoutReference, callback_url: `${publicAppUrl()}/dashboard/billing?reference=${encodeURIComponent(checkoutReference)}`, metadata: JSON.stringify(metadata) };
+      const payload = { email: user.email, amount: String(amount), currency, reference: checkoutReference, callback_url: `${appUrl}/dashboard/billing?reference=${encodeURIComponent(checkoutReference)}`, metadata: JSON.stringify(metadata) };
       if (plan.paystack_plan_code) payload.plan = plan.paystack_plan_code;
       try {
         const checkout = await paystackRequest("/transaction/initialize", { method: "POST", body: JSON.stringify(payload) });
         return json(response, 200, { authorizationUrl: checkout.authorization_url, reference: checkout.reference });
       } catch (error) {
         await client.from("payment_transactions").update({ status: "failed", failure_reason: error instanceof Error ? error.message : "Paystack initialization failed." }).eq("provider_reference", checkoutReference);
+        await client.from("creator_subscriptions").update({ status: "incomplete", updated_at: new Date().toISOString() }).eq("id", subscription.data.id).eq("status", "pending");
         throw error;
       }
     }
@@ -46,7 +58,8 @@ export default async function handler(request, response) {
     const listing = await client.from("listings").select("id,user_id,status").eq("id", targetId).eq("user_id", user.id).eq("status", "active").maybeSingle();
     if (listing.error || !listing.data) throw new Error("Only your active Bizz listings can be promoted.");
     amount = Number(packageRow.price_cents);
-    currency = packageRow.currency;
+    currency = typeof packageRow.currency === "string" ? packageRow.currency.toUpperCase() : "";
+    if (!Number.isSafeInteger(amount) || amount <= 0 || !/^[A-Z]{3}$/.test(currency)) throw new Error("This promotion package does not have valid payment configuration.");
     const order = await client.from("promotion_orders").insert({ creator_id: user.id, target_type: "listing", listing_id: targetId, package_id: packageId, status: "pending_payment", amount_cents: amount, currency }).select("id").single();
     if (order.error || !order.data) throw new Error(order.error?.message || "Promotion order could not be prepared.");
     metadata = { hustlehub_kind: "promotion", user_id: user.id, promotion_order_id: order.data.id, package_id: packageId, listing_id: targetId };
@@ -54,7 +67,7 @@ export default async function handler(request, response) {
     if (transaction.error || !transaction.data) throw new Error(transaction.error?.message || "Payment transaction could not be prepared.");
     await client.from("promotion_orders").update({ transaction_id: transaction.data.id }).eq("id", order.data.id);
     try {
-      const checkout = await paystackRequest("/transaction/initialize", { method: "POST", body: JSON.stringify({ email: user.email, amount: String(amount), currency, reference: checkoutReference, callback_url: `${publicAppUrl()}/dashboard/promotions?reference=${encodeURIComponent(checkoutReference)}`, metadata: JSON.stringify(metadata) }) });
+      const checkout = await paystackRequest("/transaction/initialize", { method: "POST", body: JSON.stringify({ email: user.email, amount: String(amount), currency, reference: checkoutReference, callback_url: `${appUrl}/dashboard/promotions?reference=${encodeURIComponent(checkoutReference)}`, metadata: JSON.stringify(metadata) }) });
       return json(response, 200, { authorizationUrl: checkout.authorization_url, reference: checkout.reference });
     } catch (error) {
       await client.from("payment_transactions").update({ status: "failed", failure_reason: error instanceof Error ? error.message : "Paystack initialization failed." }).eq("provider_reference", checkoutReference);

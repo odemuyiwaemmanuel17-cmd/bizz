@@ -1,6 +1,6 @@
 import { getSupabase } from "./supabase";
 
-export type MonetizationEnvironment = "disabled" | "test" | "live";
+export type MonetizationEnvironment = "disabled" | "test";
 export type TransactionStatus = "pending" | "succeeded" | "failed" | "refunded" | "cancelled";
 
 export interface MonetizationConfig {
@@ -123,6 +123,11 @@ export interface AdminPaymentTransaction {
   readonly createdAt: string;
 }
 
+interface PaymentHistoryResponse {
+  readonly subscription: Record<string, unknown> | null;
+  readonly transactions: Array<Record<string, unknown>>;
+}
+
 function requireSupabase() {
   const sb = getSupabase();
   if (sb === null) throw new Error("Supabase is not configured.");
@@ -139,7 +144,7 @@ function objectValue(value: unknown): Record<string, unknown> {
 }
 
 function mapConfig(row: Record<string, unknown>): MonetizationConfig {
-  const environment = row.environment === "test" || row.environment === "live" ? row.environment : "disabled";
+  const environment = row.environment === "test" ? row.environment : "disabled";
   return {
     environment,
     provider: typeof row.provider === "string" ? row.provider : null,
@@ -156,15 +161,14 @@ export async function getMonetizationOverview(): Promise<MonetizationOverview> {
   const user = await sb.auth.getUser();
   const userId = user.data.user?.id;
   if (userId === undefined) throw new Error("Sign in to view monetization.");
-  const [configResult, plansResult, subscriptionResult, transactionsResult, promotionResult, payoutsResult] = await Promise.all([
+  const [configResult, plansResult, history, promotionResult, payoutsResult] = await Promise.all([
     sb.from("monetization_config").select("environment,provider,payments_enabled,subscriptions_enabled,paid_promotions_enabled,digital_products_enabled,collaborations_enabled").eq("id", 1).single(),
     sb.from("monetization_plans").select("code,name,description,active,price_cents,currency,billing_interval,entitlements,audience,paystack_plan_code").order("display_order").order("code"),
-    sb.from("creator_subscriptions").select("id,plan_code,status,current_period_end,cancel_at_period_end").eq("creator_id", userId).in("status", ["incomplete", "pending", "active", "past_due"]).order("created_at", { ascending: false }).limit(1).maybeSingle(),
-    sb.from("payment_transactions").select("id,transaction_kind,status,amount_cents,currency,platform_fee_cents,creator_net_cents,created_at").or(`buyer_id.eq.${userId},creator_id.eq.${userId}`).order("created_at", { ascending: false }).limit(25),
+    getPaymentHistory(),
     sb.from("promotion_orders").select("id,target_type,status,amount_cents,currency,starts_at,ends_at,created_at").eq("creator_id", userId).order("created_at", { ascending: false }).limit(25),
     sb.from("creator_payouts").select("id,amount_cents,currency,status,created_at").eq("creator_id", userId).order("created_at", { ascending: false }).limit(25),
   ]);
-  const firstError = configResult.error ?? plansResult.error ?? subscriptionResult.error ?? transactionsResult.error ?? promotionResult.error ?? payoutsResult.error;
+  const firstError = configResult.error ?? plansResult.error ?? promotionResult.error ?? payoutsResult.error;
   if (firstError) throw new Error(firstError.message);
   const config = mapConfig((configResult.data ?? {}) as Record<string, unknown>);
   const plans: MonetizationPlan[] = ((plansResult.data ?? []) as Array<Record<string, unknown>>).map((row) => {
@@ -179,7 +183,7 @@ export async function getMonetizationOverview(): Promise<MonetizationOverview> {
       paystackPlanCode: typeof row.paystack_plan_code === "string" ? row.paystack_plan_code : null,
     };
   });
-  const subscriptionRow = subscriptionResult.data as Record<string, unknown> | null;
+  const subscriptionRow = history.subscription;
   return {
     config,
     plans,
@@ -188,9 +192,9 @@ export async function getMonetizationOverview(): Promise<MonetizationOverview> {
       currentPeriodEnd: typeof subscriptionRow.current_period_end === "string" ? subscriptionRow.current_period_end : null,
       cancelAtPeriodEnd: subscriptionRow.cancel_at_period_end === true,
     },
-    transactions: ((transactionsResult.data ?? []) as Array<Record<string, unknown>>).map((row) => ({
-      id: String(row.id), transactionKind: String(row.transaction_kind) as MonetizationTransaction["transactionKind"], status: String(row.status) as TransactionStatus,
-      amountCents: numberValue(row.amount_cents), currency: String(row.currency), platformFeeCents: numberValue(row.platform_fee_cents), creatorNetCents: numberValue(row.creator_net_cents), createdAt: String(row.created_at),
+    transactions: history.transactions.map((row) => ({
+      id: String(row.id), transactionKind: String(row.transactionKind) as MonetizationTransaction["transactionKind"], status: String(row.status) as TransactionStatus,
+      amountCents: numberValue(row.amountCents), currency: String(row.currency), platformFeeCents: numberValue(row.platformFeeCents), creatorNetCents: numberValue(row.creatorNetCents), createdAt: String(row.createdAt),
     })),
     promotionOrders: ((promotionResult.data ?? []) as Array<Record<string, unknown>>).map((row) => ({
       id: String(row.id), targetType: String(row.target_type) as PromotionOrderSummary["targetType"], status: String(row.status), amountCents: numberValue(row.amount_cents), currency: String(row.currency),
@@ -198,6 +202,13 @@ export async function getMonetizationOverview(): Promise<MonetizationOverview> {
     })),
     payouts: ((payoutsResult.data ?? []) as Array<Record<string, unknown>>).map((row) => ({ id: String(row.id), amountCents: numberValue(row.amount_cents), currency: String(row.currency), status: String(row.status), createdAt: String(row.created_at) })),
   };
+}
+
+export async function getPaymentHistory(): Promise<PaymentHistoryResponse> {
+  const response = await fetch("/api/paystack/transactions", { method: "GET", headers: await authenticatedApiHeaders() });
+  const body = await response.json().catch(() => ({})) as Partial<PaymentHistoryResponse> & { error?: string };
+  if (!response.ok || !Array.isArray(body.transactions)) throw new Error(body.error ?? "Payment history could not be loaded.");
+  return { subscription: body.subscription !== null && typeof body.subscription === "object" ? body.subscription as Record<string, unknown> : null, transactions: body.transactions.filter((row): row is Record<string, unknown> => row !== null && typeof row === "object") };
 }
 
 export async function getPublicPlans(): Promise<readonly MonetizationPlan[]> {

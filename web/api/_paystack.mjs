@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 
 export function json(response, status, body) {
@@ -56,9 +57,34 @@ export async function enabledConfig(client, capability) {
 
 export function requestBody(request) {
   if (request.body && typeof request.body === "object") return request.body;
+  if (typeof request.body === "string") {
+    try {
+      const parsed = JSON.parse(request.body);
+      return parsed !== null && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
   return {};
 }
 
 export function reference(prefix) {
   return `hustlehub_${prefix}_${crypto.randomUUID().replaceAll("-", "")}`;
+}
+
+export function paystackSignatureMatches(body, signature, secret) {
+  if (!secret || typeof signature !== "string" || !/^[a-f0-9]{128}$/i.test(signature)) return false;
+  const expected = crypto.createHmac("sha512", secret).update(body).digest("hex");
+  return crypto.timingSafeEqual(Buffer.from(signature.toLowerCase(), "hex"), Buffer.from(expected, "hex"));
+}
+
+export function assertVerifiedTransaction(local, remote) {
+  if (remote?.reference !== local.provider_reference || remote?.status !== "success" || Number(remote?.amount) !== Number(local.amount_cents) || String(remote?.currency).toUpperCase() !== String(local.currency).toUpperCase()) {
+    throw new Error("Payment verification did not match the expected transaction.");
+  }
+}
+
+export function checkoutKind(value) {
+  if (value === "subscription" || value === "promotion") return value;
+  throw new Error("A valid checkout type is required.");
 }

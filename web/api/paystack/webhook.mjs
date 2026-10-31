@@ -1,5 +1,5 @@
+import { adminClient, json, paystackSignatureMatches } from "../_paystack.mjs";
 import crypto from "node:crypto";
-import { adminClient, json } from "../_paystack.mjs";
 
 export const config = { api: { bodyParser: false } };
 
@@ -17,8 +17,7 @@ export default async function handler(request, response) {
   if (!secret) return json(response, 503, { error: "Paystack webhook is not configured." });
   const body = await rawBody(request);
   const signature = request.headers["x-paystack-signature"];
-  const expected = crypto.createHmac("sha512", secret).update(body).digest("hex");
-  if (typeof signature !== "string" || signature.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) return json(response, 401, { error: "Invalid webhook signature." });
+  if (!paystackSignatureMatches(body, signature, secret)) return json(response, 401, { error: "Invalid webhook signature." });
   let event;
   try { event = JSON.parse(body.toString("utf8")); } catch { return json(response, 400, { error: "Invalid webhook JSON." }); }
   try {
