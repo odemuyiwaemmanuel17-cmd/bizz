@@ -33,6 +33,10 @@ export function publicAppUrl() {
   return (process.env.PUBLIC_APP_URL || process.env.VERCEL_PROJECT_PRODUCTION_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "")).replace(/\/$/, "");
 }
 
+export function paystackPublicKey() {
+  return process.env.PAYSTACK_PUBLIC_KEY || null;
+}
+
 export async function paystackRequest(path, options = {}) {
   const secret = process.env.PAYSTACK_SECRET_KEY;
   if (!secret) throw new Error("PAYSTACK_SECRET_KEY is not configured on the server.");

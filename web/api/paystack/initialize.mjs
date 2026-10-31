@@ -1,4 +1,4 @@
-import { adminClient, authenticatedUser, checkoutKind, enabledConfig, json, methodAllowed, paystackRequest, publicAppUrl, reference, requestBody } from "../_paystack.mjs";
+import { adminClient, authenticatedUser, checkoutKind, enabledConfig, json, methodAllowed, paystackPublicKey, paystackRequest, publicAppUrl, reference, requestBody } from "../_paystack.mjs";
 
 export default async function handler(request, response) {
   if (!methodAllowed(request, response)) return;
@@ -42,7 +42,7 @@ export default async function handler(request, response) {
       if (plan.paystack_plan_code) payload.plan = plan.paystack_plan_code;
       try {
         const checkout = await paystackRequest("/transaction/initialize", { method: "POST", body: JSON.stringify(payload) });
-        return json(response, 200, { authorizationUrl: checkout.authorization_url, reference: checkout.reference });
+        return json(response, 200, { authorizationUrl: checkout.authorization_url, reference: checkout.reference, publicKey: paystackPublicKey() });
       } catch (error) {
         await client.from("payment_transactions").update({ status: "failed", failure_reason: error instanceof Error ? error.message : "Paystack initialization failed." }).eq("provider_reference", checkoutReference);
         await client.from("creator_subscriptions").update({ status: "incomplete", updated_at: new Date().toISOString() }).eq("id", subscription.data.id).eq("status", "pending");
@@ -68,7 +68,7 @@ export default async function handler(request, response) {
     await client.from("promotion_orders").update({ transaction_id: transaction.data.id }).eq("id", order.data.id);
     try {
       const checkout = await paystackRequest("/transaction/initialize", { method: "POST", body: JSON.stringify({ email: user.email, amount: String(amount), currency, reference: checkoutReference, callback_url: `${appUrl}/dashboard/promotions?reference=${encodeURIComponent(checkoutReference)}`, metadata: JSON.stringify(metadata) }) });
-      return json(response, 200, { authorizationUrl: checkout.authorization_url, reference: checkout.reference });
+      return json(response, 200, { authorizationUrl: checkout.authorization_url, reference: checkout.reference, publicKey: paystackPublicKey() });
     } catch (error) {
       await client.from("payment_transactions").update({ status: "failed", failure_reason: error instanceof Error ? error.message : "Paystack initialization failed." }).eq("provider_reference", checkoutReference);
       await client.from("promotion_orders").update({ status: "failed" }).eq("id", order.data.id);

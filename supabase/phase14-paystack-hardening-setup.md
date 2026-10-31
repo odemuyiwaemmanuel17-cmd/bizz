@@ -27,3 +27,8 @@ GET /api/paystack/transactions
 
 It requires the signed-in user's Supabase access token and never accepts a user
 ID from the browser.
+
+The hosted-checkout initialization response may include `publicKey` from the
+server-side `PAYSTACK_PUBLIC_KEY` setting. It is a public identifier and is
+never used for authentication. `PAYSTACK_SECRET_KEY` is never returned or
+bundled; hosted Checkout is initialized with that secret on the server.
