@@ -23,7 +23,7 @@ export default async function handler(request, response) {
       const plan = planResult.data;
       amount = Number(plan.price_cents);
       currency = typeof plan.currency === "string" ? plan.currency.toUpperCase() : "";
-      if (!Number.isSafeInteger(amount) || amount <= 0 || !/^[A-Z]{3}$/.test(currency) || (plan.billing_interval !== "month" && plan.billing_interval !== "year")) throw new Error("This plan does not have valid payment configuration.");
+      if (!Number.isSafeInteger(amount) || amount <= 0 || !/^[A-Z]{3}$/.test(currency) || (plan.billing_interval !== "month" && plan.billing_interval !== "year") || typeof plan.paystack_plan_code !== "string" || !/^PLN_[A-Za-z0-9]+$/.test(plan.paystack_plan_code)) throw new Error("This plan does not have valid Paystack test-plan configuration.");
       const existing = await client.from("creator_subscriptions").select("id,status,current_period_end").eq("creator_id", user.id).eq("plan_code", plan.code).in("status", ["active", "pending", "past_due"]).order("created_at", { ascending: false }).limit(1).maybeSingle();
       if (existing.error) throw new Error(existing.error.message);
       if (existing.data?.status === "active" || existing.data?.status === "past_due") throw new Error("You already have this plan. Manage the current subscription from Plans & Billing.");
@@ -37,9 +37,9 @@ export default async function handler(request, response) {
         throw new Error(transaction.error?.message || "Payment transaction could not be prepared.");
       }
       metadata.transaction_id = transaction.data.id;
-      if (plan.paystack_plan_code) metadata.paystack_plan_code = plan.paystack_plan_code;
+      metadata.paystack_plan_code = plan.paystack_plan_code;
       const payload = { email: user.email, amount: String(amount), currency, reference: checkoutReference, callback_url: `${appUrl}/dashboard/billing?reference=${encodeURIComponent(checkoutReference)}`, metadata: JSON.stringify(metadata) };
-      if (plan.paystack_plan_code) payload.plan = plan.paystack_plan_code;
+      payload.plan = plan.paystack_plan_code;
       try {
         const checkout = await paystackRequest("/transaction/initialize", { method: "POST", body: JSON.stringify(payload) });
         return json(response, 200, { authorizationUrl: checkout.authorization_url, reference: checkout.reference, publicKey: paystackPublicKey() });
