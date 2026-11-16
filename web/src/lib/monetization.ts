@@ -32,17 +32,19 @@ export interface CreatorSubscription {
   readonly status: string;
   readonly currentPeriodEnd: string | null;
   readonly cancelAtPeriodEnd: boolean;
+  readonly createdAt: string | null;
 }
 
 export interface MonetizationTransaction {
   readonly id: string;
   readonly transactionKind: "promotion" | "subscription" | "digital_product" | "collaboration";
-  readonly status: TransactionStatus;
+  readonly status: TransactionStatus | "needs_reconciliation";
   readonly amountCents: number;
   readonly currency: string;
   readonly platformFeeCents: number;
   readonly creatorNetCents: number;
   readonly createdAt: string;
+  readonly reconciliationReason?: string | null;
 }
 
 export interface PromotionOrderSummary {
@@ -78,7 +80,12 @@ export interface PromotionPackage {
 export interface MonetizationOverview {
   readonly config: MonetizationConfig;
   readonly plans: readonly MonetizationPlan[];
+  /** Only an active, unexpired, verified subscription. Never a pending checkout. */
   readonly subscription: CreatorSubscription | null;
+  /** An unconfirmed checkout attempt, shown separately from the current plan. */
+  readonly pendingCheckout: CreatorSubscription | null;
+  /** Most recent subscription row of any status, for explicit status labels. */
+  readonly latestSubscription: CreatorSubscription | null;
   readonly transactions: readonly MonetizationTransaction[];
   readonly promotionOrders: readonly PromotionOrderSummary[];
   readonly payouts: readonly CreatorPayoutSummary[];
@@ -124,8 +131,51 @@ export interface AdminPaymentTransaction {
 }
 
 interface PaymentHistoryResponse {
-  readonly subscription: Record<string, unknown> | null;
+  readonly subscription: CreatorSubscription | null;
+  readonly pendingCheckout: CreatorSubscription | null;
+  readonly latestSubscription: CreatorSubscription | null;
   readonly transactions: Array<Record<string, unknown>>;
+}
+
+const SUBSCRIPTION_LABELS: Record<string, string> = {
+  active: "Active",
+  pending: "Pending checkout",
+  incomplete: "Checkout not completed",
+  past_due: "Past due",
+  cancelled: "Cancelled",
+  expired: "Expired",
+  needs_reconciliation: "Needs reconciliation",
+  free: "Free",
+};
+
+/** Clear, explicit label for every subscription state the API can return. */
+export function subscriptionStatusLabel(status: string): string {
+  return SUBSCRIPTION_LABELS[status] ?? status.replaceAll("_", " ").replace(/^./, (character) => character.toUpperCase());
+}
+
+/** Mirrors has_monetization_entitlement: only active, unexpired rows count. */
+export function isActiveSubscription(subscription: CreatorSubscription | null, now = Date.now()): boolean {
+  if (subscription === null || subscription.status !== "active") return false;
+  if (subscription.currentPeriodEnd === null) return true;
+  const end = Date.parse(subscription.currentPeriodEnd);
+  return Number.isFinite(end) ? end > now : true;
+}
+
+function mapSubscriptionRow(row: unknown): CreatorSubscription | null {
+  if (row === null || typeof row !== "object" || Array.isArray(row)) return null;
+  const item = row as Record<string, unknown>;
+  const planCode = typeof item.planCode === "string" ? item.planCode : typeof item.plan_code === "string" ? item.plan_code : null;
+  if (typeof item.id !== "string" || planCode === null) return null;
+  const currentPeriodEnd = typeof item.currentPeriodEnd === "string" ? item.currentPeriodEnd : typeof item.current_period_end === "string" ? item.current_period_end : null;
+  const createdAt = typeof item.createdAt === "string" ? item.createdAt : typeof item.created_at === "string" ? item.created_at : null;
+  return {
+    id: item.id,
+    planCode,
+    status: String(item.status),
+    currentPeriodEnd,
+    cancelAtPeriodEnd: item.cancelAtPeriodEnd === true,
+    createdAt,
+  };
 }
 
 function requireSupabase() {
@@ -183,18 +233,16 @@ export async function getMonetizationOverview(): Promise<MonetizationOverview> {
       paystackPlanCode: typeof row.paystack_plan_code === "string" ? row.paystack_plan_code : null,
     };
   });
-  const subscriptionRow = history.subscription;
   return {
     config,
     plans,
-    subscription: subscriptionRow === null ? null : {
-      id: String(subscriptionRow.id), planCode: String(subscriptionRow.plan_code), status: String(subscriptionRow.status),
-      currentPeriodEnd: typeof subscriptionRow.current_period_end === "string" ? subscriptionRow.current_period_end : null,
-      cancelAtPeriodEnd: subscriptionRow.cancel_at_period_end === true,
-    },
+    subscription: history.subscription,
+    pendingCheckout: history.pendingCheckout,
+    latestSubscription: history.latestSubscription,
     transactions: history.transactions.map((row) => ({
-      id: String(row.id), transactionKind: String(row.transactionKind) as MonetizationTransaction["transactionKind"], status: String(row.status) as TransactionStatus,
+      id: String(row.id), transactionKind: String(row.transactionKind) as MonetizationTransaction["transactionKind"], status: String(row.status) as MonetizationTransaction["status"],
       amountCents: numberValue(row.amountCents), currency: String(row.currency), platformFeeCents: numberValue(row.platformFeeCents), creatorNetCents: numberValue(row.creatorNetCents), createdAt: String(row.createdAt),
+      reconciliationReason: typeof row.reconciliationReason === "string" ? row.reconciliationReason : null,
     })),
     promotionOrders: ((promotionResult.data ?? []) as Array<Record<string, unknown>>).map((row) => ({
       id: String(row.id), targetType: String(row.target_type) as PromotionOrderSummary["targetType"], status: String(row.status), amountCents: numberValue(row.amount_cents), currency: String(row.currency),
@@ -208,7 +256,12 @@ export async function getPaymentHistory(): Promise<PaymentHistoryResponse> {
   const response = await fetch("/api/paystack/transactions", { method: "GET", headers: await authenticatedApiHeaders() });
   const body = await response.json().catch(() => ({})) as Partial<PaymentHistoryResponse> & { error?: string };
   if (!response.ok || !Array.isArray(body.transactions)) throw new Error(body.error ?? "Payment history could not be loaded.");
-  return { subscription: body.subscription !== null && typeof body.subscription === "object" ? body.subscription as Record<string, unknown> : null, transactions: body.transactions.filter((row): row is Record<string, unknown> => row !== null && typeof row === "object") };
+  return {
+    subscription: mapSubscriptionRow(body.subscription),
+    pendingCheckout: mapSubscriptionRow(body.pendingCheckout),
+    latestSubscription: mapSubscriptionRow(body.latestSubscription),
+    transactions: body.transactions.filter((row): row is Record<string, unknown> => row !== null && typeof row === "object"),
+  };
 }
 
 export async function getPublicPlans(): Promise<readonly MonetizationPlan[]> {
