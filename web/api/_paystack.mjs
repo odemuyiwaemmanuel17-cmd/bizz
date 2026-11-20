@@ -74,9 +74,13 @@ export function paystackPublicKey() {
 export async function paystackRequest(path, options = {}) {
   const secret = process.env.PAYSTACK_SECRET_KEY;
   if (!secret) throw new CheckoutError("PAYSTACK_SECRET_KEY is not configured on the server.", 503, "server_configuration_missing");
+  // Callers that must not hang a user request pass a timeout in milliseconds.
+  const { timeoutMs, ...init } = options;
+  const signal = init.signal ?? (typeof timeoutMs === "number" && timeoutMs > 0 ? AbortSignal.timeout(timeoutMs) : undefined);
   const response = await fetch(`https://api.paystack.co${path}`, {
-    ...options,
-    headers: { Authorization: `Bearer ${secret}`, "Content-Type": "application/json", ...(options.headers || {}) },
+    ...init,
+    ...(signal ? { signal } : {}),
+    headers: { Authorization: `Bearer ${secret}`, "Content-Type": "application/json", ...(init.headers || {}) },
   });
   const body = await response.json().catch(() => ({}));
   if (!response.ok || body.status !== true) throw new Error(body.message || `Paystack request failed (${response.status}).`);
@@ -273,6 +277,63 @@ export function isEntitled(subscription, now = Date.now()) {
   if (end === null || end === undefined || end === "") return true;
   const parsed = Date.parse(end);
   return Number.isFinite(parsed) ? parsed > now : true;
+}
+
+/* ------------------------------------------------------------------ */
+/* Self-service subscription management                                */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Statuses whose owner may still be sent to Paystack's management page. A
+ * failing renewal (past_due) is included: stopping future charges is exactly
+ * what that user needs. Pending/incomplete checkouts and reconciliation rows
+ * are excluded because they are not real, verified provider subscriptions.
+ */
+const MANAGEABLE_SUBSCRIPTION_STATUSES = new Set(["active", "past_due"]);
+
+/**
+ * Single source of truth for "can this subscription be managed/cancelled?".
+ * Mirrors has_monetization_entitlement: only a real Paystack subscription
+ * inside its paid period qualifies, so a lapsed or unlinked row can never be
+ * handed to the provider.
+ */
+export function isCancellableSubscription(subscription, now = Date.now()) {
+  if (!subscription || typeof subscription !== "object") return false;
+  if (!MANAGEABLE_SUBSCRIPTION_STATUSES.has(String(subscription.status ?? ""))) return false;
+  if (subscription.provider !== "paystack") return false;
+  const code = subscription.provider_subscription_id;
+  if (typeof code !== "string" || code.trim().length === 0) return false;
+  const end = subscription.current_period_end ?? null;
+  if (end === null || end === undefined || end === "") return true;
+  const parsed = Date.parse(end);
+  return Number.isFinite(parsed) ? parsed > now : false;
+}
+
+const PAYSTACK_MANAGEMENT_HOSTS = Object.freeze(["paystack.com", "paystack.co"]);
+
+/**
+ * Validates the hosted management link returned by Paystack before it can
+ * become a browser redirect. Only https on Paystack's own domains is allowed,
+ * which keeps a tampered or unexpected provider response from turning this
+ * endpoint into an open redirect.
+ */
+export function assertPaystackManageLink(value) {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    throw new CheckoutError("Paystack did not return a subscription management link.", 502, "invalid_provider_response");
+  }
+  let url;
+  try {
+    url = new URL(value.trim());
+  } catch {
+    throw new CheckoutError("Paystack returned an invalid subscription management link.", 502, "invalid_provider_response");
+  }
+  const host = url.hostname.toLowerCase();
+  const allowed = url.protocol === "https:" && PAYSTACK_MANAGEMENT_HOSTS.some((domain) => host === domain || host.endsWith(`.${domain}`));
+  if (!allowed) {
+    console.error("[paystack manage-link] rejected redirect target", { protocol: url.protocol, host });
+    throw new CheckoutError("Paystack returned an unexpected subscription management link.", 502, "invalid_provider_response");
+  }
+  return url.toString();
 }
 
 /* ------------------------------------------------------------------ */

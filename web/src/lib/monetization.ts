@@ -32,7 +32,14 @@ export interface CreatorSubscription {
   readonly status: string;
   readonly currentPeriodEnd: string | null;
   readonly cancelAtPeriodEnd: boolean;
+  /** Server-decided: a real Paystack subscription inside its paid period. */
+  readonly cancellable: boolean;
   readonly createdAt: string | null;
+}
+
+export interface SubscriptionManageLink {
+  readonly managementUrl: string;
+  readonly alreadyScheduledForCancellation: boolean;
 }
 
 export interface MonetizationTransaction {
@@ -174,6 +181,7 @@ function mapSubscriptionRow(row: unknown): CreatorSubscription | null {
     status: String(item.status),
     currentPeriodEnd,
     cancelAtPeriodEnd: item.cancelAtPeriodEnd === true,
+    cancellable: item.cancellable === true,
     createdAt,
   };
 }
@@ -295,6 +303,20 @@ export async function startPaystackCheckout(input: { readonly kind: "subscriptio
   const body = await response.json().catch(() => ({})) as { authorizationUrl?: string; reference?: string; error?: string };
   if (!response.ok || typeof body.authorizationUrl !== "string" || typeof body.reference !== "string") throw new Error(body.error ?? "Paystack checkout could not be initialized.");
   return { authorizationUrl: body.authorizationUrl, reference: body.reference };
+}
+
+/**
+ * Asks the server for the hosted Paystack management link for the caller's own
+ * subscription. Ownership and eligibility are decided server-side; the browser
+ * only receives a redirect URL.
+ */
+export async function requestSubscriptionManageLink(subscriptionId?: string): Promise<SubscriptionManageLink> {
+  const payload: Record<string, string> = {};
+  if (subscriptionId !== undefined && subscriptionId.length > 0) payload.subscriptionId = subscriptionId;
+  const response = await fetch("/api/paystack/subscription/manage-link", { method: "POST", headers: await authenticatedApiHeaders(), body: JSON.stringify(payload) });
+  const body = await response.json().catch(() => ({})) as { managementUrl?: string; alreadyScheduledForCancellation?: boolean; error?: string };
+  if (!response.ok || typeof body.managementUrl !== "string" || body.managementUrl.length === 0) throw new Error(body.error ?? "Your subscription could not be opened in Paystack.");
+  return { managementUrl: body.managementUrl, alreadyScheduledForCancellation: body.alreadyScheduledForCancellation === true };
 }
 
 export async function verifyPaystackPayment(reference: string): Promise<void> {

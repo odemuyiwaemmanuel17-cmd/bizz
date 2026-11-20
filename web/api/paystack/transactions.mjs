@@ -1,6 +1,8 @@
-import { adminClient, authenticatedUser, json, methodAllowed, sendError } from "../_paystack.mjs";
+import { adminClient, authenticatedUser, isCancellableSubscription, json, methodAllowed, sendError } from "../_paystack.mjs";
 
-const SUBSCRIPTION_FIELDS = "id,plan_code,status,current_period_end,cancel_at_period_end,created_at";
+// `provider` and `provider_subscription_id` are read but never returned: they
+// only decide whether the UI may offer the Paystack cancellation flow.
+const SUBSCRIPTION_FIELDS = "id,plan_code,status,provider,provider_subscription_id,current_period_end,cancel_at_period_end,created_at";
 
 function mapSubscription(row) {
   if (!row) return null;
@@ -10,6 +12,7 @@ function mapSubscription(row) {
     status: String(row.status),
     currentPeriodEnd: typeof row.current_period_end === "string" ? row.current_period_end : null,
     cancelAtPeriodEnd: row.cancel_at_period_end === true,
+    cancellable: isCancellableSubscription(row),
     createdAt: typeof row.created_at === "string" ? row.created_at : null,
   };
 }
